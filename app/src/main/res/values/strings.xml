@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RopeahVPN</string>
+
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_connected">Connected</string>
+
+    <string name="action_connect">Connect</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_share_log">Share log</string>
+
+    <string name="home_select_server_title">Select a server</string>
+    <string name="home_select_server_subtitle">Tap to pick a profile</string>
+    <string name="home_latency_unknown">— ms</string>
+    <string name="home_latency_pending">measuring…</string>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_servers">Servers</string>
+
+    <string name="servers_screen_title">Servers</string>
+    <string name="servers_empty">No servers yet. Tap + to add one.</string>
+    <string name="servers_empty_title">No servers yet</string>
+    <string name="servers_empty_subtitle">Add a profile to start routing traffic through your tunnel.</string>
+    <string name="servers_fab_add">Add</string>
+    <string name="server_status_active">active</string>
+    <string name="servers_add_title">Add server</string>
+    <string name="servers_add_hint">Paste vmess:// vless:// trojan:// or ss:// URI</string>
+    <string name="servers_add_action">Add</string>
+    <string name="servers_add_cancel">Cancel</string>
+    <string name="servers_add_invalid">Could not parse that URI.</string>
+    <string name="servers_add_scan_qr">Scan QR code</string>
+    <string name="servers_add_scan_qr_desc">Point camera at a config QR</string>
+    <string name="servers_add_paste_clip">Paste from clipboard</string>
+    <string name="servers_add_paste_clip_desc">Read a copied URI</string>
+    <string name="servers_add_manual">Paste manually</string>
+    <string name="servers_add_clipboard_empty">Clipboard is empty.</string>
+    <string name="servers_add_scan_prompt">Aim at the config QR</string>
+    <string name="servers_add_camera_denied">Camera permission needed to scan.</string>
+    <string name="servers_add_imported">Imported %1$s</string>
+    <string name="server_action_set_active">Set as active</string>
+    <string name="server_action_show_qr">Show QR code</string>
+    <string name="server_action_copy_uri">Copy URI</string>
+    <string name="server_action_share_uri">Share URI</string>
+    <string name="server_action_delete">Delete</string>
+    <string name="server_active_badge">Active</string>
+    <string name="server_qr_title">%1$s</string>
+    <string name="server_qr_dismiss">Close</string>
+    <string name="server_uri_copied">URI copied to clipboard</string>
+    <string name="server_deleted">Deleted %1$s</string>
+    <string name="server_deleted_undo">Undo</string>
+    <string name="server_share_chooser">Share server URI</string>
+
+    <string name="notif_channel_vpn">VPN status</string>
+    <string name="notif_channel_vpn_desc">Shown while RopeahVPN is connected.</string>
+    <string name="notif_title_connected">RopeahVPN connected</string>
+    <string name="notif_text_connected">Routing traffic through %1$s</string>
+    <string name="notif_text_connected_detail">%1$s · %2$s · %3$s</string>
+    <string name="notif_latency_unknown">— ms</string>
+    <string name="notif_action_disconnect">Disconnect</string>
+</resources>
