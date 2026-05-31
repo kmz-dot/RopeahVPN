@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,7 +38,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentCopy
@@ -46,15 +46,15 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -66,8 +66,8 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -96,12 +96,9 @@ import com.journeyapps.barcodescanner.ScanOptions
 import com.ropeah.vpn.R
 import com.ropeah.vpn.data.Protocol
 import com.ropeah.vpn.data.ServerConfig
-import com.ropeah.vpn.util.LogExporter
 import com.ropeah.vpn.util.QrEncoder
 import com.ropeah.vpn.vpn.VpnStatus
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,9 +106,12 @@ fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
     val servers by viewModel.servers.collectAsStateWithLifecycle()
     val active by viewModel.activeServer.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()
+    val latencyMap by viewModel.latencyMap.collectAsStateWithLifecycle()
+    val pinging by viewModel.pinging.collectAsStateWithLifecycle()
     var addOpen by remember { mutableStateOf(false) }
     var contextTarget by remember { mutableStateOf<ServerConfig?>(null) }
     var qrTarget by remember { mutableStateOf<ServerConfig?>(null) }
+    var scanTarget by remember { mutableStateOf<ServerConfig?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -150,33 +150,6 @@ fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
     }
 
     Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.servers_screen_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                },
-                actions = {
-                    IconButton(onClick = {
-                        coroutineScope.launch {
-                            val file = withContext(Dispatchers.IO) { LogExporter.capture(context) }
-                            LogExporter.share(context, file)
-                        }
-                    }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Article,
-                            contentDescription = stringResource(R.string.action_share_log),
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = Color.Transparent,
-                ),
-            )
-        },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             if (servers.isNotEmpty()) {
@@ -184,7 +157,8 @@ fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
                     Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.servers_fab_add))
                 }
             }
-        }
+        },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
         if (servers.isEmpty()) {
             EmptyServers(
@@ -198,16 +172,20 @@ fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(servers, key = { it.id }) { server ->
                     val isActive = server.id == active?.id
+                    val latencyMs = latencyMap[server.id]
+                    val isPinging = pinging.contains(server.id)
                     ServerCard(
                         server = server,
                         isActive = isActive,
                         isConnected = isActive && status == VpnStatus.Connected,
                         isConnecting = isActive && status == VpnStatus.Connecting,
+                        latencyMs = latencyMs,
+                        isPinging = isPinging,
                         onTap = { viewModel.selectServer(server) },
                         onLongPress = { contextTarget = server },
                     )
@@ -237,9 +215,11 @@ fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
 
     contextTarget?.let { target ->
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val isPinging = pinging.contains(target.id)
         ServerContextSheet(
             server = target,
             isActive = target.id == active?.id,
+            isPinging = isPinging,
             sheetState = sheetState,
             onDismiss = { contextTarget = null },
             onSetActive = {
@@ -258,6 +238,14 @@ fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
                 shareUri(target)
                 contextTarget = null
             },
+            onTestLatency = {
+                viewModel.measureLatency(target)
+                contextTarget = null
+            },
+            onScanIps = {
+                scanTarget = target
+                contextTarget = null
+            },
             onDelete = {
                 val index = servers.indexOfFirst { it.id == target.id }.coerceAtLeast(0)
                 contextTarget = null
@@ -269,6 +257,14 @@ fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
     qrTarget?.let { target ->
         ServerQrDialog(server = target, onDismiss = { qrTarget = null })
     }
+
+    scanTarget?.let { target ->
+        IpScanDialog(
+            server = target,
+            viewModel = viewModel,
+            onDismiss = { scanTarget = null },
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -278,6 +274,8 @@ private fun ServerCard(
     isActive: Boolean,
     isConnected: Boolean,
     isConnecting: Boolean,
+    latencyMs: Long?,
+    isPinging: Boolean,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
@@ -322,12 +320,26 @@ private fun ServerCard(
                     }
                 }
                 Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "${protocolLabel(server.protocol)}  ·  ${server.address}:${server.port}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "${protocolLabel(server.protocol)}  ·  ${server.address}:${server.port}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (latencyMs != null) {
+                        Spacer(Modifier.width(8.dp))
+                        LatencyBadge(latencyMs = latencyMs)
+                    } else if (isPinging) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "...",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        )
+                    }
+                }
             }
             Spacer(Modifier.width(8.dp))
             Icon(
@@ -336,6 +348,28 @@ private fun ServerCard(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+@Composable
+private fun LatencyBadge(latencyMs: Long) {
+    val (color, label) = when {
+        latencyMs < 0L -> MaterialTheme.colorScheme.onSurfaceVariant to "timeout"
+        latencyMs < 100 -> Color(0xFF4ADE80) to "${latencyMs}ms"
+        latencyMs < 300 -> Color(0xFFFACC15) to "${latencyMs}ms"
+        else -> Color(0xFFFF6B6B) to "${latencyMs}ms"
+    }
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = color.copy(alpha = 0.15f),
+    ) {
+        Text(
+            text = label,
+            color = color,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
     }
 }
 
@@ -471,12 +505,15 @@ private fun EmptyServers(
 private fun ServerContextSheet(
     server: ServerConfig,
     isActive: Boolean,
+    isPinging: Boolean,
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onSetActive: () -> Unit,
     onShowQr: () -> Unit,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onTestLatency: () -> Unit,
+    onScanIps: () -> Unit,
     onDelete: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -496,6 +533,18 @@ private fun ServerContextSheet(
             ContextRow(Icons.Filled.QrCode2, stringResource(R.string.server_action_show_qr), onShowQr)
             ContextRow(Icons.Filled.ContentCopy, stringResource(R.string.server_action_copy_uri), onCopy)
             ContextRow(Icons.Filled.Share, stringResource(R.string.server_action_share_uri), onShare)
+            ContextRow(
+                icon = Icons.Filled.Sync,
+                label = stringResource(R.string.server_action_test_latency),
+                onClick = onTestLatency,
+                tint = if (isPinging) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                       else MaterialTheme.colorScheme.onSurface,
+            )
+            ContextRow(
+                icon = Icons.Filled.Search,
+                label = stringResource(R.string.server_action_scan_ips),
+                onClick = onScanIps,
+            )
             ContextRow(
                 icon = Icons.Filled.Delete,
                 label = stringResource(R.string.server_action_delete),

@@ -17,8 +17,8 @@ import kotlinx.serialization.json.put
  */
 object XrayConfigBuilder {
 
-    fun build(server: ServerConfig, socksPort: Int): JsonObject = buildJsonObject {
-        put("log", buildJsonObject { put("loglevel", "debug") })
+    fun build(server: ServerConfig, socksPort: Int, logLevel: String = "debug"): JsonObject = buildJsonObject {
+        put("log", buildJsonObject { put("loglevel", logLevel) })
         put("stats", buildJsonObject {})
         put("policy", buildJsonObject {
             put("system", buildJsonObject {

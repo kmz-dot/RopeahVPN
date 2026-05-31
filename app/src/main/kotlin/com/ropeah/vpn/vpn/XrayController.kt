@@ -10,14 +10,21 @@ import libv2ray.CoreController
 import libv2ray.Libv2ray
 
 interface XrayController {
-    fun start(server: ServerConfig, socksPort: Int): Boolean
+    fun start(server: ServerConfig, socksPort: Int, logLevel: String = "debug"): Boolean
     fun stop()
     fun queryStats(tag: String, direction: String): Long
     fun measureDelay(url: String): Long
     val isRunning: Boolean
 
     companion object {
-        fun create(context: Context): XrayController = LibV2rayController(context)
+        @Volatile
+        private var instance: XrayController? = null
+
+        fun create(context: Context): XrayController {
+            return instance ?: synchronized(this) {
+                instance ?: LibV2rayController(context).also { instance = it }
+            }
+        }
     }
 }
 
@@ -37,10 +44,10 @@ private class LibV2rayController(context: Context) : XrayController {
     override val isRunning: Boolean
         get() = controller.isRunning
 
-    override fun start(server: ServerConfig, socksPort: Int): Boolean {
+    override fun start(server: ServerConfig, socksPort: Int, logLevel: String): Boolean {
         val configJson = json.encodeToString(
             kotlinx.serialization.json.JsonObject.serializer(),
-            XrayConfigBuilder.build(server, socksPort),
+            XrayConfigBuilder.build(server, socksPort, logLevel),
         )
         Log.i(TAG, "starting xray: protocol=${server.protocol} address=${server.address}:${server.port} " +
             "network=${server.network ?: "tcp"} security=${server.security ?: "none"} sni=${server.sni ?: "-"}")

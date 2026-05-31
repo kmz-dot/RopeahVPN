@@ -6,8 +6,10 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.ropeah.vpn.data.AppSettings
 import com.ropeah.vpn.data.ServerConfig
 import com.ropeah.vpn.data.ServerRepository
+import com.ropeah.vpn.data.SettingsRepository
 import com.ropeah.vpn.util.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,6 +62,8 @@ class RopeahVpnService : VpnService() {
             Log.i(TAG, "startVpn: pkg=$packageName uid=${android.os.Process.myUid()}")
             val repo = ServerRepository(applicationContext)
             val server = repo.activeServer.first()
+            val settingsRepo = SettingsRepository(applicationContext)
+            val settings = settingsRepo.readOnce()
             if (server == null) {
                 Log.w(TAG, "no active server; refusing to connect")
                 stopSelfSafely()
@@ -68,17 +72,17 @@ class RopeahVpnService : VpnService() {
             Log.i(TAG, "active server: name=${server.name} proto=${server.protocol} " +
                 "addr=${server.address}:${server.port}")
 
-            val fd = buildTun(server) ?: run {
+            val fd = buildTun(server, settings) ?: run {
                 Log.w(TAG, "VpnService.Builder returned null fd")
                 stopSelfSafely()
                 return@launch
             }
             tunFd = fd
-            Log.i(TAG, "tun established: fd=${fd.fd} mtu=$MTU addr=10.0.0.2/32 route=0.0.0.0/0 " +
-                "dns=1.1.1.1,8.8.8.8 disallowedApp=$packageName")
+            Log.i(TAG, "tun established: fd=${fd.fd} mtu=${settings.mtu} addr=10.0.0.2/32 route=0.0.0.0/0 " +
+                "dns=${settings.dnsPrimary},${settings.dnsSecondary} disallowedApp=$packageName")
 
             val socksPort = LOCAL_SOCKS_PORT
-            if (!xray.start(server, socksPort)) {
+            if (!xray.start(server, socksPort, settings.logLevel.value)) {
                 Log.w(TAG, "Xray start failed")
                 stopSelfSafely()
                 return@launch
@@ -97,11 +101,11 @@ class RopeahVpnService : VpnService() {
             activeServerName = server.name
             connectedSinceMs = System.currentTimeMillis()
             VpnStateBus.set(VpnStatus.Connected)
-            statsJob = launchStatsLoop()
+            statsJob = launchStatsLoop(settings)
         }
     }
 
-    private fun launchStatsLoop(): Job = scope.launch {
+    private fun launchStatsLoop(settings: AppSettings): Job = scope.launch {
         var totalUp = 0L
         var totalDown = 0L
         var lastLatency = TrafficSample.LATENCY_UNKNOWN
@@ -115,7 +119,7 @@ class RopeahVpnService : VpnService() {
 
             val now = System.currentTimeMillis()
             if (now - lastLatencyAt > LATENCY_INTERVAL_MS) {
-                lastLatency = xray.measureDelay(LATENCY_PROBE_URL)
+                lastLatency = xray.measureDelay(settings.latencyProbeUrl)
                 lastLatencyAt = now
             }
 
@@ -144,14 +148,22 @@ class RopeahVpnService : VpnService() {
         }
     }
 
-    private fun buildTun(server: ServerConfig): ParcelFileDescriptor? {
+    private fun buildTun(server: ServerConfig, settings: AppSettings): ParcelFileDescriptor? {
         val builder = Builder()
             .setSession(server.name)
-            .setMtu(MTU)
+            .setMtu(settings.mtu)
             .addAddress("10.0.0.2", 32)
             .addRoute("0.0.0.0", 0)
-            .addDnsServer("1.1.1.1")
-            .addDnsServer("8.8.8.8")
+        if (settings.useCustomDns) {
+            builder.addDnsServer(settings.dnsPrimary)
+            builder.addDnsServer(settings.dnsSecondary)
+        } else {
+            builder.addDnsServer("1.1.1.1")
+            builder.addDnsServer("8.8.8.8")
+        }
+        if (settings.killSwitch) {
+            builder.setBlocking(true)
+        }
         try {
             builder.addDisallowedApplication(packageName)
         } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
@@ -194,12 +206,10 @@ class RopeahVpnService : VpnService() {
         const val ACTION_START = "com.ropeah.vpn.action.START"
         const val ACTION_STOP = "com.ropeah.vpn.action.STOP"
         private const val TAG = "RopeahVpnService"
-        private const val MTU = 1500
         private const val LOCAL_SOCKS_PORT = 10808
         private const val PROXY_TAG = "proxy"
         private const val SAMPLE_INTERVAL_MS = 1000L
         private const val LATENCY_INTERVAL_MS = 10_000L
         private const val NOTIF_REFRESH_MS = 5_000L
-        private const val LATENCY_PROBE_URL = "https://www.gstatic.com/generate_204"
     }
 }
