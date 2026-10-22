@@ -14,6 +14,7 @@ import com.ropeah.vpn.data.SessionRepository
 import com.ropeah.vpn.data.SessionState
 import com.ropeah.vpn.data.SyncResult
 import com.ropeah.vpn.vpn.RopeahVpnService
+import com.ropeah.vpn.work.SessionMaintenanceWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -125,6 +126,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
                     lastSyncMs = 0L,
                 )
                 sessionRepo.save(state)
+                SessionMaintenanceWorker.enqueue(getApplication())
                 _loginState.value = LoginUiState()
                 // Best effort: a failed pull must not invalidate a successful login.
                 runSync(state, force = false)
