@@ -39,7 +39,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,7 +65,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ropeah.vpn.BuildConfig
 import com.ropeah.vpn.R
+import com.ropeah.vpn.data.SessionGuard
 import com.ropeah.vpn.data.SessionState
+import kotlinx.coroutines.delay
 import com.ropeah.vpn.ui.CloudflareScanPage
 import com.ropeah.vpn.util.LogExporter
 import kotlinx.coroutines.Dispatchers
@@ -84,10 +88,31 @@ fun AppNav() {
     val sessionViewModel: SessionViewModel = viewModel()
     val session by sessionViewModel.session.collectAsStateWithLifecycle()
     val ready by sessionViewModel.ready.collectAsStateWithLifecycle()
+    val checkingAccess by sessionViewModel.checkingAccess.collectAsStateWithLifecycle()
+
+    // Server-anchored clock tick, coarse enough to only drive the lock screen.
+    val nowMs by produceState(initialValue = System.currentTimeMillis()) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(10_000L)
+        }
+    }
+
+    val expired = session != null && SessionGuard.isExpired(session, nowMs)
+
+    LaunchedEffect(expired) {
+        if (expired) sessionViewModel.stopVpn()
+    }
 
     when {
         !ready -> LoadingGate()
         session == null -> LoginScreen(viewModel = sessionViewModel)
+        expired -> ExpiredScreen(
+            session = session!!,
+            checking = checkingAccess,
+            onCheckAgain = { sessionViewModel.revalidateNow() },
+            onLogout = { sessionViewModel.logout() },
+        )
         else -> MainScaffold(
             session = session!!,
             sessionViewModel = sessionViewModel,

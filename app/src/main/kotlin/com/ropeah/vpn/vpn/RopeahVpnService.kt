@@ -6,9 +6,14 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.ropeah.vpn.data.ApiClient
+import com.ropeah.vpn.data.ApiException
 import com.ropeah.vpn.data.AppSettings
+import com.ropeah.vpn.data.PingRequest
 import com.ropeah.vpn.data.ServerConfig
 import com.ropeah.vpn.data.ServerRepository
+import com.ropeah.vpn.data.SessionGuard
+import com.ropeah.vpn.data.SessionRepository
 import com.ropeah.vpn.data.SettingsRepository
 import com.ropeah.vpn.util.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
@@ -31,6 +36,8 @@ class RopeahVpnService : VpnService() {
     private var statsJob: Job? = null
     private var activeServerName: String = "—"
     private var connectedSinceMs: Long = 0L
+    private val sessionRepo by lazy { SessionRepository(applicationContext) }
+    private val api by lazy { ApiClient() }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -64,6 +71,15 @@ class RopeahVpnService : VpnService() {
             val server = repo.activeServer.first()
             val settingsRepo = SettingsRepository(applicationContext)
             val settings = settingsRepo.readOnce()
+
+            // Defence in depth: a sticky restart must not resurrect an expired
+            // or logged-out session even though the UI gate already checked.
+            val session = sessionRepo.readOnce()
+            if (session == null || SessionGuard.isExpired(session, System.currentTimeMillis())) {
+                Log.w(TAG, "session missing or expired; refusing to connect")
+                stopSelfSafely()
+                return@launch
+            }
             if (server == null) {
                 Log.w(TAG, "no active server; refusing to connect")
                 stopSelfSafely()
@@ -101,16 +117,20 @@ class RopeahVpnService : VpnService() {
             activeServerName = server.name
             connectedSinceMs = System.currentTimeMillis()
             VpnStateBus.set(VpnStatus.Connected)
-            statsJob = launchStatsLoop(settings)
+            statsJob = launchStatsLoop(settings, server.id)
         }
     }
 
-    private fun launchStatsLoop(settings: AppSettings): Job = scope.launch {
+    private fun launchStatsLoop(settings: AppSettings, serverId: String): Job = scope.launch {
         var totalUp = 0L
         var totalDown = 0L
+        var reportedUp = 0L
+        var reportedDown = 0L
         var lastLatency = TrafficSample.LATENCY_UNKNOWN
         var lastLatencyAt = 0L
         var lastNotifAt = 0L
+        var lastExpiryCheckAt = 0L
+        var lastPingAt = 0L
         while (isActive) {
             val up = xray.queryStats(PROXY_TAG, "uplink")
             val down = xray.queryStats(PROXY_TAG, "downlink")
@@ -142,6 +162,70 @@ class RopeahVpnService : VpnService() {
                     latencyMs = lastLatency,
                 )
                 lastNotifAt = now
+            }
+
+            // Local expiry check while connected (~every 30 s).
+            if (now - lastExpiryCheckAt >= EXPIRY_CHECK_INTERVAL_MS) {
+                lastExpiryCheckAt = now
+                val session = sessionRepo.readOnce()
+                if (SessionGuard.isExpired(session, now)) {
+                    Log.w(TAG, "session expired mid-session; dropping tunnel")
+                    stopVpn()
+                    return@launch
+                }
+            }
+
+            // Heartbeat every 60 s: traffic deltas, live extension, revoke.
+            if (now - lastPingAt >= PING_INTERVAL_MS) {
+                lastPingAt = now
+                val session = sessionRepo.readOnce()
+                if (session == null) {
+                    Log.w(TAG, "session gone while connected; dropping tunnel")
+                    stopVpn()
+                    return@launch
+                }
+                try {
+                    val response = api.ping(
+                        token = session.token,
+                        body = PingRequest(
+                            configVersion = session.configVersion,
+                            connected = true,
+                            activeServerId = serverId,
+                            upDelta = totalUp - reportedUp,
+                            downDelta = totalDown - reportedDown,
+                            latencyMs = lastLatency.takeIf { it >= 0L },
+                        ),
+                    )
+                    reportedUp = totalUp
+                    reportedDown = totalDown
+                    if (response.revoked) {
+                        Log.w(TAG, "session revoked by backend; dropping tunnel")
+                        sessionRepo.clear()
+                        stopVpn()
+                        return@launch
+                    }
+                    sessionRepo.updateFromServer(
+                        serverTime = response.serverTime ?: (now + session.serverOffsetMs),
+                        expiresAt = response.expiresAt,
+                        configVersion = response.configVersion,
+                        deviceNow = now,
+                    )
+                } catch (e: ApiException.Unauthorized) {
+                    Log.w(TAG, "heartbeat 401; clearing session")
+                    sessionRepo.clear()
+                    stopVpn()
+                    return@launch
+                } catch (e: ApiException.Forbidden) {
+                    Log.w(TAG, "heartbeat 403: ${e.message}")
+                    val serverTime = e.serverTime
+                    if (serverTime != null) {
+                        sessionRepo.updateFromServer(serverTime, e.expiresAt, null, now)
+                    }
+                    stopVpn()
+                    return@launch
+                } catch (e: ApiException) {
+                    Log.i(TAG, "heartbeat failed (offline?): ${e.message}")
+                }
             }
 
             delay(SAMPLE_INTERVAL_MS)
@@ -211,5 +295,7 @@ class RopeahVpnService : VpnService() {
         private const val SAMPLE_INTERVAL_MS = 1000L
         private const val LATENCY_INTERVAL_MS = 10_000L
         private const val NOTIF_REFRESH_MS = 5_000L
+        private const val EXPIRY_CHECK_INTERVAL_MS = 30_000L
+        private const val PING_INTERVAL_MS = 60_000L
     }
 }

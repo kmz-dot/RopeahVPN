@@ -8,6 +8,7 @@ import com.ropeah.vpn.R
 import com.ropeah.vpn.data.ApiClient
 import com.ropeah.vpn.data.ApiException
 import com.ropeah.vpn.data.ConfigSync
+import com.ropeah.vpn.data.PingRequest
 import com.ropeah.vpn.data.ServerRepository
 import com.ropeah.vpn.data.SessionRepository
 import com.ropeah.vpn.data.SessionState
@@ -53,6 +54,47 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _syncMessage = MutableStateFlow<String?>(null)
     val syncMessage: StateFlow<String?> = _syncMessage
+
+    private val _checkingAccess = MutableStateFlow(false)
+    val checkingAccess: StateFlow<Boolean> = _checkingAccess
+
+    /** Manual "check again" from the expired lock screen: ping, then update expiry. */
+    fun revalidateNow() {
+        viewModelScope.launch {
+            if (_checkingAccess.value) return@launch
+            val current = sessionRepo.readOnce() ?: return@launch
+            _checkingAccess.value = true
+            val deviceNow = System.currentTimeMillis()
+            try {
+                val response = api.ping(
+                    token = current.token,
+                    body = PingRequest(configVersion = current.configVersion, connected = false),
+                )
+                if (response.revoked) {
+                    sessionExpiredLocally()
+                } else {
+                    sessionRepo.updateFromServer(
+                        serverTime = response.serverTime ?: (deviceNow + current.serverOffsetMs),
+                        expiresAt = response.expiresAt,
+                        configVersion = response.configVersion,
+                        deviceNow = deviceNow,
+                    )
+                }
+            } catch (e: ApiException.Unauthorized) {
+                sessionExpiredLocally()
+            } catch (e: ApiException.Forbidden) {
+                val serverTime = e.serverTime
+                if (serverTime != null) {
+                    sessionRepo.updateFromServer(serverTime, e.expiresAt, null, deviceNow)
+                }
+            } catch (e: ApiException) {
+                _syncMessage.value =
+                    getApplication<Application>().getString(R.string.expired_check_failed)
+            } finally {
+                _checkingAccess.value = false
+            }
+        }
+    }
 
     init {
         viewModelScope.launch {

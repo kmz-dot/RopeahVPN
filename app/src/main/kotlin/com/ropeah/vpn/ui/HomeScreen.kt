@@ -54,6 +54,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -77,6 +78,7 @@ fun HomeScreen(
     val server by viewModel.activeServer.collectAsStateWithLifecycle()
     val traffic by viewModel.traffic.collectAsStateWithLifecycle()
     val connectedSince by viewModel.connectedSince.collectAsStateWithLifecycle()
+    val connectBlocked by viewModel.connectBlocked.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
 
@@ -189,6 +191,7 @@ fun HomeScreen(
             Button(
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    viewModel.clearConnectBlocked()
                     if (status == VpnStatus.Connected || status == VpnStatus.Connecting) {
                         viewModel.stopVpn(context)
                     } else {
@@ -215,6 +218,17 @@ fun HomeScreen(
                     style = MaterialTheme.typography.titleLarge,
                 )
             }
+        }
+
+        if (connectBlocked != null) {
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = connectBlocked!!,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
         }
 
         Spacer(Modifier.height(32.dp))
