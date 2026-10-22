@@ -77,13 +77,15 @@ fun GlassCard(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(24.dp),
     highlighted: Boolean = false,
+    borderBrush: Brush? = null,
+    fillBrush: Brush? = null,
     contentPadding: PaddingValues = PaddingValues(18.dp),
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val borderBrush = if (highlighted) neonBorderGradient(0.62f) else GlassBorderGradient
-    val fill = if (highlighted) {
+    val resolvedBorder = borderBrush ?: if (highlighted) neonBorderGradient(0.62f) else GlassBorderGradient
+    val resolvedFill = fillBrush ?: if (highlighted) {
         Brush.verticalGradient(
             listOf(
                 NeoTeal.copy(alpha = 0.10f),
@@ -99,7 +101,7 @@ fun GlassCard(
 
     val base = modifier
         .then(
-            if (highlighted) {
+            if (highlighted && fillBrush == null) {
                 Modifier.shadow(
                     elevation = 22.dp,
                     shape = shape,
@@ -111,8 +113,8 @@ fun GlassCard(
             },
         )
         .clip(shape)
-        .background(fill, shape)
-        .border(if (highlighted) 1.2.dp else 1.dp, borderBrush, shape)
+        .background(resolvedFill, shape)
+        .border(if (highlighted) 1.2.dp else 1.dp, resolvedBorder, shape)
 
     val interactive = when {
         onClick != null && onLongClick != null -> base.combinedClickable(
@@ -196,6 +198,53 @@ fun HudChip(
     }
 }
 
+/** Four-bar latency meter with a monospace readout. */
+@Composable
+fun LatencyMeter(
+    latencyMs: Long?,
+    modifier: Modifier = Modifier,
+) {
+    val color = latencyColor(latencyMs)
+    val activeBars = when {
+        latencyMs == null || latencyMs < 0L -> 0
+        latencyMs < 100L -> 4
+        latencyMs < 250L -> 3
+        else -> 2
+    }
+    val label = when {
+        latencyMs == null -> "--"
+        latencyMs < 0L -> "TO"
+        else -> "${latencyMs}ms"
+    }
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            repeat(4) { index ->
+                Box(
+                    Modifier
+                        .width(3.dp)
+                        .height((5 + index * 2).dp)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(
+                            if (index < activeBars) color else Color.White.copy(alpha = 0.10f),
+                        ),
+                )
+            }
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = label,
+            style = HudTinyStyle,
+            color = color,
+        )
+    }
+}
+
 @Composable
 fun NeoBadge(
     text: String,
@@ -231,13 +280,14 @@ fun NeoPrimaryButton(
     icon: ImageVector? = null,
 ) {
     val active = enabled && !loading
+    val showGradient = enabled || loading
     val shape = RoundedCornerShape(18.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(54.dp)
             .then(
-                if (active) {
+                if (showGradient) {
                     Modifier.shadow(
                         elevation = 20.dp,
                         shape = shape,
@@ -250,11 +300,11 @@ fun NeoPrimaryButton(
             )
             .clip(shape)
             .background(
-                if (active) NeonGradient else SolidColor(Color.White.copy(alpha = 0.055f)),
+                if (showGradient) NeonGradient else SolidColor(Color.White.copy(alpha = 0.055f)),
             )
             .border(
                 width = 1.dp,
-                brush = if (active) {
+                brush = if (showGradient) {
                     Brush.linearGradient(
                         listOf(
                             Color.White.copy(alpha = 0.34f),
@@ -282,7 +332,7 @@ fun NeoPrimaryButton(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = if (active) Color(0xFF04121A) else NeoTextTertiary,
+                    tint = if (showGradient) Color(0xFF04121A) else NeoTextTertiary,
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(10.dp))
@@ -293,7 +343,7 @@ fun NeoPrimaryButton(
                     fontSize = 13.sp,
                     letterSpacing = 1.2.sp,
                 ),
-                color = if (active) Color(0xFF04121A) else NeoTextTertiary,
+                color = if (showGradient) Color(0xFF04121A) else NeoTextTertiary,
             )
         }
     }
@@ -363,7 +413,7 @@ fun NeoIconPill(
 ) {
     Box(
         modifier = modifier
-            .size(42.dp)
+            .size(48.dp)
             .clip(CircleShape)
             .background(NeoGlassFill)
             .border(1.dp, GlassBorderGradient, CircleShape)
@@ -430,6 +480,18 @@ fun NeoTextField(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .then(
+                            if (focused) {
+                                Modifier.shadow(
+                                    elevation = 18.dp,
+                                    shape = shape,
+                                    ambientColor = NeoTeal.copy(alpha = 0.34f),
+                                    spotColor = NeoCyan.copy(alpha = 0.24f),
+                                )
+                            } else {
+                                Modifier
+                            },
+                        )
                         .clip(shape)
                         .background(
                             Brush.verticalGradient(
@@ -493,12 +555,12 @@ fun NeoStatusPill(
 
     val accent = when (status) {
         VpnStatus.Connected -> NeoTeal
-        VpnStatus.Connecting -> NeoCyan
+        VpnStatus.Connecting -> NeoTeal
         VpnStatus.Disconnected -> NeoTextSecondary
     }
     val label = when (status) {
         VpnStatus.Connected -> stringResource(R.string.neo_secure_link)
-        VpnStatus.Connecting -> stringResource(R.string.status_connecting)
+        VpnStatus.Connecting -> stringResource(R.string.neo_linking)
         VpnStatus.Disconnected -> stringResource(R.string.status_disconnected)
     }
     val shape = CircleShape

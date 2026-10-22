@@ -3,20 +3,29 @@ package com.ropeah.vpn.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Info
@@ -24,16 +33,12 @@ import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.SignalCellularAlt
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,9 +49,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -55,11 +61,25 @@ import com.ropeah.vpn.R
 import com.ropeah.vpn.data.AppSettings
 import com.ropeah.vpn.data.LogLevel
 import com.ropeah.vpn.data.ThemeMode
+import com.ropeah.vpn.ui.neo.GlassBorderGradient
+import com.ropeah.vpn.ui.neo.GlassCard
+import com.ropeah.vpn.ui.neo.HudTinyStyle
+import com.ropeah.vpn.ui.neo.HudValueStyle
+import com.ropeah.vpn.ui.neo.NeoSectionHeader
+import com.ropeah.vpn.ui.neo.NeonGradient
+import com.ropeah.vpn.ui.theme.NeoGlassFill
+import com.ropeah.vpn.ui.theme.NeoRed
+import com.ropeah.vpn.ui.theme.NeoSurface
+import com.ropeah.vpn.ui.theme.NeoTeal
+import com.ropeah.vpn.ui.theme.NeoTextPrimary
+import com.ropeah.vpn.ui.theme.NeoTextSecondary
+import com.ropeah.vpn.ui.theme.NeoTextTertiary
 import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
     viewModel: VpnViewModel = viewModel(),
+    onOpenCloudflareScan: (() -> Unit)? = null,
 ) {
     val settings by viewModel.appSettings.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -75,10 +95,13 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = 20.dp)
+            .padding(top = 4.dp, bottom = 28.dp),
     ) {
-        // ── Connection ──
-        SectionHeader(label = stringResource(R.string.settings_section_connection))
+        NeoSectionHeader(
+            text = stringResource(R.string.settings_section_connection),
+            modifier = Modifier.padding(top = 14.dp, bottom = 8.dp),
+        )
 
         SettingsToggle(
             icon = Icons.Filled.Router,
@@ -88,6 +111,8 @@ fun SettingsScreen(
             onCheckedChange = { save { copy(killSwitch = it) } },
         )
 
+        Spacer(Modifier.height(8.dp))
+
         SettingsToggle(
             icon = Icons.Filled.Sync,
             title = stringResource(R.string.settings_auto_reconnect),
@@ -96,10 +121,10 @@ fun SettingsScreen(
             onCheckedChange = { save { copy(autoReconnect = it) } },
         )
 
-        Spacer(Modifier.height(8.dp))
-
-        // ── Network ──
-        SectionHeader(label = stringResource(R.string.settings_section_network))
+        NeoSectionHeader(
+            text = stringResource(R.string.settings_section_network),
+            modifier = Modifier.padding(top = 20.dp, bottom = 8.dp),
+        )
 
         SettingsToggle(
             icon = Icons.Filled.Dns,
@@ -116,7 +141,6 @@ fun SettingsScreen(
         ) {
             Column {
                 Spacer(Modifier.height(8.dp))
-
                 SettingsTextField(
                     icon = Icons.Filled.Dns,
                     title = stringResource(R.string.settings_dns_primary),
@@ -124,9 +148,7 @@ fun SettingsScreen(
                     isError = !dnsPrimaryValid,
                     onValueChange = { save { copy(dnsPrimary = it) } },
                 )
-
                 Spacer(Modifier.height(8.dp))
-
                 SettingsTextField(
                     icon = null,
                     title = stringResource(R.string.settings_dns_secondary),
@@ -138,7 +160,6 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(8.dp))
-
         SettingsTextField(
             icon = Icons.Filled.Tune,
             title = stringResource(R.string.settings_mtu),
@@ -152,7 +173,6 @@ fun SettingsScreen(
         )
 
         Spacer(Modifier.height(8.dp))
-
         SettingsTextField(
             icon = Icons.Filled.SignalCellularAlt,
             title = stringResource(R.string.settings_latency_probe),
@@ -161,10 +181,10 @@ fun SettingsScreen(
             onValueChange = { save { copy(latencyProbeUrl = it) } },
         )
 
-        Spacer(Modifier.height(8.dp))
-
-        // ── Advanced ──
-        SectionHeader(label = stringResource(R.string.settings_section_advanced))
+        NeoSectionHeader(
+            text = stringResource(R.string.settings_section_advanced),
+            modifier = Modifier.padding(top = 20.dp, bottom = 8.dp),
+        )
 
         SettingsDropdown(
             icon = Icons.Filled.Tune,
@@ -196,10 +216,10 @@ fun SettingsScreen(
             },
         )
 
-        Spacer(Modifier.height(8.dp))
-
-        // ── About ──
-        SectionHeader(label = stringResource(R.string.settings_section_about))
+        NeoSectionHeader(
+            text = stringResource(R.string.settings_section_about),
+            modifier = Modifier.padding(top = 20.dp, bottom = 8.dp),
+        )
 
         AboutRow(
             icon = Icons.Filled.Info,
@@ -207,21 +227,58 @@ fun SettingsScreen(
             subtitle = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
         )
 
-        Spacer(Modifier.height(32.dp))
+        if (onOpenCloudflareScan != null) {
+            NeoSectionHeader(
+                text = stringResource(R.string.neo_admin_tools),
+                modifier = Modifier.padding(top = 20.dp, bottom = 8.dp),
+            )
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onOpenCloudflareScan,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 13.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsIcon(icon = Icons.Filled.Cloud)
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.nav_cloudflare_scan),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = NeoTextPrimary,
+                        )
+                        Text(
+                            text = stringResource(R.string.neo_cloudflare_scan_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = NeoTextSecondary,
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = NeoTextSecondary,
+                    )
+                }
+            }
+        }
     }
 }
 
-// ── Private composables (unchanged) ──
-
 @Composable
-private fun SectionHeader(label: String) {
-    Text(
-        text = label.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
-    )
+private fun SettingsIcon(icon: ImageVector) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(NeoTeal.copy(alpha = 0.10f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = NeoTeal,
+            modifier = Modifier.size(18.dp),
+        )
+    }
 }
 
 @Composable
@@ -232,42 +289,42 @@ private fun SettingsToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable { onCheckedChange(!checked) },
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = { onCheckedChange(!checked) },
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp),
-            )
+            SettingsIcon(icon = icon)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = NeoTextPrimary,
                 )
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = NeoTextSecondary,
                 )
             }
-            Spacer(Modifier.width(12.dp))
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            Spacer(Modifier.width(10.dp))
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color(0xFF04121A),
+                    checkedTrackColor = NeoTeal,
+                    checkedBorderColor = NeoTeal,
+                    uncheckedThumbColor = NeoTextSecondary,
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.055f),
+                    uncheckedBorderColor = NeoTextTertiary,
+                ),
+            )
         }
     }
 }
@@ -291,60 +348,69 @@ private fun SettingsTextField(
     subtitle: String? = null,
     isError: Boolean = false,
 ) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    GlassCard(
         modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.Top,
         ) {
             if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .size(24.dp)
-                        .padding(top = 8.dp),
-                )
+                SettingsIcon(icon = icon)
                 Spacer(Modifier.width(12.dp))
             } else {
-                // Keep text fields aligned with icon-bearing fields
-                Spacer(Modifier.width(36.dp))
+                Spacer(Modifier.width(46.dp))
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = NeoTextPrimary,
                 )
                 if (subtitle != null) {
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = NeoTextSecondary,
                     )
                 }
-                Spacer(Modifier.height(6.dp))
-                androidx.compose.material3.OutlinedTextField(
+                Spacer(Modifier.height(8.dp))
+                val fieldShape = RoundedCornerShape(12.dp)
+                BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
                     singleLine = true,
-                    isError = isError,
+                    textStyle = HudValueStyle.copy(color = NeoTextPrimary),
+                    cursorBrush = NeonGradient,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    decorationBox = { innerTextField ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(fieldShape)
+                                .background(NeoGlassFill)
+                                .border(
+                                    1.dp,
+                                    if (isError) {
+                                        SolidColor(NeoRed.copy(alpha = 0.65f))
+                                    } else {
+                                        GlassBorderGradient
+                                    },
+                                    fieldShape,
+                                )
+                                .heightIn(min = 48.dp)
+                                .padding(horizontal = 12.dp, vertical = 15.dp),
+                        ) {
+                            innerTextField()
+                        }
+                    },
                 )
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsDropdown(
     icon: ImageVector,
@@ -355,64 +421,53 @@ private fun SettingsDropdown(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.Top,
+    Box {
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { expanded = true },
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 13.dp),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .size(24.dp)
-                    .padding(top = 8.dp),
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.height(4.dp))
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = it },
-                ) {
-                    OutlinedTextField(
-                        value = selectedLabel,
-                        onValueChange = {},
-                        readOnly = true,
-                        singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier
-                            .menuAnchor(type = MenuAnchorType.PrimaryNotEditable, enabled = true)
-                            .fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SettingsIcon(icon = icon)
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = NeoTextPrimary,
                     )
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                    ) {
-                        options.forEachIndexed { index, option ->
-                            DropdownMenuItem(
-                                text = { Text(option) },
-                                onClick = {
-                                    onOptionSelected(index)
-                                    expanded = false
-                                },
-                            )
-                        }
-                    }
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = selectedLabel,
+                        style = HudValueStyle,
+                        color = NeoTeal,
+                    )
                 }
+                Icon(
+                    imageVector = Icons.Filled.ArrowDropDown,
+                    contentDescription = null,
+                    tint = NeoTextSecondary,
+                )
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor = NeoSurface,
+        ) {
+            options.forEachIndexed { index, option ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = option,
+                            color = if (option == selectedLabel) NeoTeal else NeoTextPrimary,
+                        )
+                    },
+                    onClick = {
+                        onOptionSelected(index)
+                        expanded = false
+                    },
+                )
             }
         }
     }
@@ -424,35 +479,24 @@ private fun AboutRow(
     title: String,
     subtitle: String,
 ) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    GlassCard(
         modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 13.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp),
-            )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SettingsIcon(icon = icon)
             Spacer(Modifier.width(12.dp))
             Column {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = NeoTextSecondary,
                 )
+                Spacer(Modifier.height(2.dp))
                 Text(
                     text = subtitle,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    style = HudTinyStyle,
+                    color = NeoTextPrimary,
                 )
             }
         }

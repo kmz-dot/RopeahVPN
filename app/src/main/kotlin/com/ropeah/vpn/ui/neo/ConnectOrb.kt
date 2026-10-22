@@ -11,7 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -112,7 +111,7 @@ fun ConnectOrb(
     val accent = when {
         locked -> NeoRed
         status == VpnStatus.Connected -> NeoTeal
-        status == VpnStatus.Connecting -> NeoCyan
+        status == VpnStatus.Connecting -> NeoTeal
         else -> NeoTextPrimary
     }
     val actionLabel = stringResource(
@@ -147,12 +146,16 @@ fun ConnectOrb(
                 else -> 1f
             }
 
-            if (status == VpnStatus.Connected && !locked) {
+            if (!locked && status != VpnStatus.Disconnected) {
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
                             NeoTeal.copy(alpha = 0.17f * pulse),
-                            NeoCyan.copy(alpha = 0.06f),
+                            if (status == VpnStatus.Connected) {
+                                NeoCyan.copy(alpha = 0.06f)
+                            } else {
+                                NeoTeal.copy(alpha = 0.05f)
+                            },
                             Color.Transparent,
                         ),
                         center = center,
@@ -187,7 +190,7 @@ fun ConnectOrb(
                         1 -> NeoCyan
                         else -> NeoViolet
                     }.copy(alpha = if (major) 0.55f else 0.24f)
-                    status == VpnStatus.Connecting -> NeoCyan.copy(alpha = 0.42f)
+                    status == VpnStatus.Connecting -> NeoTeal.copy(alpha = 0.42f)
                     else -> Color.White.copy(alpha = if (major) 0.20f else 0.10f)
                 }
                 drawLine(
@@ -211,7 +214,7 @@ fun ConnectOrb(
             // Neon progress arc.
             val sweep = when {
                 locked -> 300f
-                status == VpnStatus.Connected -> 300f
+                status == VpnStatus.Connected -> 360f
                 status == VpnStatus.Connecting -> 96f
                 else -> 216f
             }
@@ -287,7 +290,7 @@ fun ConnectOrb(
             val glyphBrush: Brush = when {
                 locked -> SolidColor(NeoRed.copy(alpha = 0.78f))
                 status == VpnStatus.Connected -> NeonGradient
-                status == VpnStatus.Connecting -> SolidColor(NeoCyan.copy(alpha = 0.90f))
+                status == VpnStatus.Connecting -> SolidColor(NeoTeal.copy(alpha = 0.90f))
                 else -> SolidColor(Color.White.copy(alpha = 0.52f))
             }
             drawArc(

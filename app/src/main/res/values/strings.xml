@@ -14,9 +14,12 @@
     <string name="neo_access_terminal">Secure access terminal</string>
     <string name="neo_identity">Identity</string>
     <string name="neo_access_key">Access key</string>
-    <string name="neo_no_account_micro">No account? Contact your admin</string>
+    <string name="neo_no_account_micro">No account? Contact admin</string>
     <string name="neo_managed_network">Managed network</string>
-    <string name="neo_managed_by_admin">Servers managed by admin</string>
+    <string name="neo_managed_by_admin">Server managed by admin</string>
+    <string name="neo_updated_admin_config">UPDATED BY ADMIN · CONFIG v%1$d</string>
+    <string name="neo_account_expired">Account expired</string>
+    <string name="neo_access_locked">Access locked</string>
     <string name="neo_config_version">Config v%1$d</string>
     <string name="neo_updated_by_admin">Updated %1$s</string>
     <string name="neo_recommended">Recommended</string>

@@ -16,6 +16,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -86,6 +87,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -98,6 +100,20 @@ import com.ropeah.vpn.BuildConfig
 import com.ropeah.vpn.R
 import com.ropeah.vpn.data.Protocol
 import com.ropeah.vpn.data.ServerConfig
+import com.ropeah.vpn.ui.neo.GlassBorderGradient
+import com.ropeah.vpn.ui.neo.GlassCard
+import com.ropeah.vpn.ui.neo.HudTinyStyle
+import com.ropeah.vpn.ui.neo.LatencyMeter
+import com.ropeah.vpn.ui.neo.MicroLabel
+import com.ropeah.vpn.ui.neo.NeoBadge
+import com.ropeah.vpn.ui.neo.NeoIconPill
+import com.ropeah.vpn.ui.neo.NeoPrimaryButton
+import com.ropeah.vpn.ui.neo.neonBorderGradient
+import com.ropeah.vpn.ui.theme.NeoCyan
+import com.ropeah.vpn.ui.theme.NeoTeal
+import com.ropeah.vpn.ui.theme.NeoTextPrimary
+import com.ropeah.vpn.ui.theme.NeoTextSecondary
+import com.ropeah.vpn.vpn.TrafficSample
 import com.ropeah.vpn.data.SessionState
 import com.ropeah.vpn.util.QrEncoder
 import com.ropeah.vpn.vpn.VpnStatus
@@ -161,6 +177,7 @@ fun ServerListScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
+        containerColor = Color.Transparent,
         floatingActionButton = {
             if (!managed && servers.isNotEmpty()) {
                 FloatingActionButton(onClick = { addOpen = true }) {
@@ -181,11 +198,24 @@ fun ServerListScreen(
                     .padding(padding),
             )
         } else {
+            val recommendedId = servers
+                .mapNotNull { candidate ->
+                    latencyMap[candidate.id]
+                        ?.takeIf { it > 0L }
+                        ?.let { candidate.id to it }
+                }
+                .minByOrNull { it.second }
+                ?.first
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(horizontal = 16.dp),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 4.dp,
+                    bottom = 12.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (managed) {
@@ -209,6 +239,7 @@ fun ServerListScreen(
                         isConnecting = isActive && status == VpnStatus.Connecting,
                         latencyMs = latencyMs,
                         isPinging = isPinging,
+                        isRecommended = server.id == recommendedId,
                         onTap = { viewModel.selectServer(server) },
                         onLongPress = { contextTarget = server },
                     )
@@ -305,52 +336,58 @@ private fun ManagedHeader(
             java.util.Locale.getDefault(),
         ).format(java.util.Date(at))
     }
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 15.dp),
     ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(
-                            R.string.servers_managed_header,
-                            session?.configVersion ?: 0,
-                        ),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(6.dp)
+                            .background(NeoTeal, CircleShape),
                     )
-                    Text(
-                        text = stringResource(
-                            R.string.servers_managed_updated,
-                            updated ?: stringResource(R.string.servers_managed_never),
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Spacer(Modifier.width(7.dp))
+                    MicroLabel(
+                        text = stringResource(R.string.neo_managed_network),
+                        color = NeoTeal,
                     )
                 }
-                if (syncing) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
-                    Button(onClick = onSync) {
-                        Icon(
-                            imageVector = Icons.Filled.Sync,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.servers_sync))
-                    }
-                }
-            }
-            if (message != null) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(7.dp))
                 Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = stringResource(
+                        R.string.neo_updated_admin_config,
+                        session?.configVersion ?: 0,
+                    ),
+                    style = HudTinyStyle,
+                    color = NeoTextPrimary,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = stringResource(
+                        R.string.neo_updated_by_admin,
+                        updated ?: stringResource(R.string.neo_never),
+                    ),
+                    style = HudTinyStyle,
+                    color = NeoTextSecondary,
                 )
             }
+            NeoIconPill(
+                icon = Icons.Filled.Sync,
+                contentDescription = stringResource(R.string.servers_sync),
+                onClick = onSync,
+                loading = syncing,
+                enabled = !syncing,
+            )
+        }
+        if (message != null) {
+            Spacer(Modifier.height(9.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = NeoTextSecondary,
+            )
         }
     }
 }
@@ -364,67 +401,72 @@ private fun ServerCard(
     isConnecting: Boolean,
     latencyMs: Long?,
     isPinging: Boolean,
+    isRecommended: Boolean,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
-    val borderAlpha = if (isActive) 1f else 0f
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = if (isActive)
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-        else
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .combinedClickable(onClick = onTap, onLongClick = onLongPress),
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        highlighted = isActive,
+        onClick = onTap,
+        onLongClick = onLongPress,
+        contentPadding = PaddingValues(horizontal = 15.dp, vertical = 14.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             ProtocolAvatar(
                 protocol = server.protocol,
-                accentAlpha = if (isActive) 1f else borderAlpha + 0.6f,
+                active = isActive,
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = server.name,
-                        fontSize = 16.sp,
-                        fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = NeoTextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (isActive) {
+                    if (!isActive && isRecommended) {
                         Spacer(Modifier.width(8.dp))
-                        ActiveDot(
-                            isConnected = isConnected,
-                            isConnecting = isConnecting,
+                        NeoBadge(
+                            text = stringResource(R.string.neo_recommended),
+                            accent = NeoCyan,
+                            filled = true,
                         )
                     }
                 }
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "${protocolLabel(server.protocol)}  ·  ${server.address}:${server.port}",
+                    style = HudTinyStyle,
+                    color = NeoTextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "${protocolLabel(server.protocol)}  ·  ${server.address}:${server.port}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
                     if (latencyMs != null) {
-                        Spacer(Modifier.width(8.dp))
-                        LatencyBadge(latencyMs = latencyMs)
+                        LatencyMeter(latencyMs = latencyMs)
                     } else if (isPinging) {
-                        Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "...",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            text = "SCANNING…",
+                            style = HudTinyStyle,
+                            color = NeoTextSecondary.copy(alpha = 0.65f),
+                        )
+                    } else {
+                        Text(
+                            text = "--",
+                            style = HudTinyStyle,
+                            color = NeoTextSecondary.copy(alpha = 0.65f),
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (isActive) {
+                        ActiveDot(
+                            isConnected = isConnected,
+                            isConnecting = isConnecting,
                         )
                     }
                 }
@@ -433,71 +475,59 @@ private fun ServerCard(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = if (isActive) NeoTeal else NeoTextSecondary.copy(alpha = 0.8f),
             )
         }
     }
 }
 
 @Composable
-private fun LatencyBadge(latencyMs: Long) {
-    val (color, label) = when {
-        latencyMs < 0L -> MaterialTheme.colorScheme.onSurfaceVariant to "timeout"
-        latencyMs < 100 -> Color(0xFF4ADE80) to "${latencyMs}ms"
-        latencyMs < 300 -> Color(0xFFFACC15) to "${latencyMs}ms"
-        else -> Color(0xFFFF6B6B) to "${latencyMs}ms"
-    }
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = color.copy(alpha = 0.15f),
-    ) {
-        Text(
-            text = label,
-            color = color,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-        )
-    }
-}
-
-@Composable
-private fun ProtocolAvatar(protocol: Protocol, accentAlpha: Float) {
-    val accent = MaterialTheme.colorScheme.primary
+private fun ProtocolAvatar(protocol: Protocol, active: Boolean) {
     Box(
         modifier = Modifier
-            .size(42.dp)
-            .background(accent.copy(alpha = 0.18f * accentAlpha), CircleShape),
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.05f))
+            .border(
+                1.dp,
+                if (active) neonBorderGradient(0.55f) else GlassBorderGradient,
+                CircleShape,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = protocolInitial(protocol),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = accent,
+            style = MaterialTheme.typography.titleMedium,
+            color = if (active) NeoTeal else NeoTextSecondary,
         )
     }
 }
 
 @Composable
 private fun ActiveDot(isConnected: Boolean, isConnecting: Boolean) {
-    val transition = rememberInfiniteTransition(label = "serverActiveDot")
-    val pulse by transition.animateFloat(
-        initialValue = if (isConnecting) 0.3f else 0.55f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = if (isConnecting) 700 else 1400,
-                easing = FastOutSlowInEasing,
+    val reduced = com.ropeah.vpn.ui.neo.rememberReducedMotion()
+    val pulse = if (reduced) {
+        1f
+    } else {
+        val transition = rememberInfiniteTransition(label = "serverActiveDot")
+        val value by transition.animateFloat(
+            initialValue = if (isConnecting) 0.3f else 0.55f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = if (isConnecting) 700 else 1400,
+                    easing = FastOutSlowInEasing,
+                ),
+                repeatMode = RepeatMode.Reverse,
             ),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "serverActiveDotPulse",
-    )
+            label = "serverActiveDotPulse",
+        )
+        value
+    }
     val color = when {
-        isConnected -> Color(0xFF4ADE80)
-        isConnecting -> Color(0xFFFACC15)
-        else -> MaterialTheme.colorScheme.primary
+        isConnected -> NeoTeal
+        isConnecting -> NeoCyan
+        else -> NeoTextSecondary
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(contentAlignment = Alignment.Center) {
@@ -505,22 +535,21 @@ private fun ActiveDot(isConnected: Boolean, isConnecting: Boolean) {
                 Box(
                     Modifier
                         .size(16.dp)
-                        .alpha(0.30f * pulse)
+                        .alpha(0.28f * pulse)
                         .background(color, CircleShape),
                 )
             }
             Box(
                 Modifier
-                    .size(8.dp)
+                    .size(7.dp)
                     .background(color, CircleShape),
             )
         }
         Spacer(Modifier.width(6.dp))
         Text(
-            text = stringResource(R.string.server_status_active),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium,
+            text = stringResource(R.string.server_status_active).uppercase(),
+            style = HudTinyStyle,
+            color = color,
         )
     }
 }
@@ -547,61 +576,61 @@ private fun EmptyServers(
     onSync: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier.padding(horizontal = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+    Box(
+        modifier = modifier.padding(horizontal = 20.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .size(96.dp)
-                .background(
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    CircleShape,
-                ),
-            contentAlignment = Alignment.Center,
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 28.dp),
         ) {
-            Icon(
-                imageVector = Icons.Filled.CloudOff,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(44.dp),
-            )
-        }
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = stringResource(R.string.servers_empty_title),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = if (managed) stringResource(R.string.servers_empty_managed)
-            else stringResource(R.string.servers_empty_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
-        Spacer(Modifier.height(24.dp))
-        if (managed) {
-            Button(onClick = onSync, enabled = !syncing) {
-                if (syncing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier
+                        .size(84.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.05f))
+                        .border(1.dp, neonBorderGradient(0.32f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CloudOff,
+                        contentDescription = null,
+                        tint = NeoTeal,
+                        modifier = Modifier.size(38.dp),
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = stringResource(R.string.servers_empty_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = NeoTextPrimary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = if (managed) stringResource(R.string.servers_empty_managed)
+                    else stringResource(R.string.servers_empty_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = NeoTextSecondary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Spacer(Modifier.height(24.dp))
+                if (managed) {
+                    NeoPrimaryButton(
+                        text = stringResource(R.string.servers_sync),
+                        onClick = onSync,
+                        enabled = !syncing,
+                        loading = syncing,
+                        icon = Icons.Filled.Sync,
                     )
                 } else {
-                    Icon(Icons.Filled.Sync, contentDescription = null)
+                    NeoPrimaryButton(
+                        text = stringResource(R.string.servers_fab_add),
+                        onClick = onAdd,
+                        icon = Icons.Filled.Add,
+                    )
                 }
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.servers_sync))
-            }
-        } else {
-            Button(onClick = onAdd) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.servers_fab_add))
             }
         }
     }

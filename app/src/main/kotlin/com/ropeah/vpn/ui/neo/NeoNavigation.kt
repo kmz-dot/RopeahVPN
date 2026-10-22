@@ -29,9 +29,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ropeah.vpn.ui.theme.NeoGlassFill
 import com.ropeah.vpn.ui.theme.NeoTeal
 import com.ropeah.vpn.ui.theme.NeoTextPrimary
 import com.ropeah.vpn.ui.theme.NeoTextSecondary
@@ -78,8 +78,10 @@ fun NeoTopBar(
             text = title.uppercase(Locale.US),
             style = MaterialTheme.typography.labelSmall,
             color = NeoTextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
-        Spacer(Modifier.weight(1f))
         actions()
     }
 }
@@ -106,8 +108,8 @@ fun NeoBottomBar(
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color(0xF20A1420),
-                            Color(0xE6070D16),
+                            Color(0xD90A1420),
+                            Color(0xC7070D16),
                         ),
                     ),
                 )

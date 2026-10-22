@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,9 +21,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.ropeah.vpn.ui.theme.NeoAmber
 import com.ropeah.vpn.ui.theme.NeoRed
-import com.ropeah.vpn.ui.theme.NeoTextPrimary
 import com.ropeah.vpn.ui.theme.NeoTextSecondary
 import kotlin.math.PI
 import kotlin.math.cos
@@ -49,7 +48,9 @@ fun ExpiryRing(
     val value = if (reduced) progress.coerceIn(0f, 1f) else animated
     val accentBrush = when {
         danger -> Brush.sweepGradient(listOf(NeoRed, NeoAmber, NeoRed))
-        warning -> Brush.sweepGradient(listOf(NeoAmber, com.ropeah.vpn.ui.theme.NeoCyan, NeoAmber))
+        warning -> Brush.sweepGradient(
+            listOf(NeoAmber, Color(0xFFFFD98A), NeoAmber),
+        )
         else -> NeonSweep
     }
 
@@ -105,7 +106,10 @@ fun ExpiryRing(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = primaryText,
-                style = MaterialTheme.typography.displaySmall.copy(
+                style = HudValueStyle.copy(
+                    fontSize = 34.sp,
+                    lineHeight = 38.sp,
+                    letterSpacing = (-0.5).sp,
                     brush = if (danger) {
                         Brush.linearGradient(listOf(NeoRed, NeoAmber))
                     } else {
@@ -113,8 +117,12 @@ fun ExpiryRing(
                     },
                 ),
             )
-            Spacer(Modifier.height(4.dp))
-            MicroLabel(text = caption, color = NeoTextSecondary)
+            Spacer(Modifier.height(5.dp))
+            Text(
+                text = caption.uppercase(),
+                style = HudLabelStyle,
+                color = if (danger) NeoRed else NeoTextSecondary,
+            )
         }
     }
 }
