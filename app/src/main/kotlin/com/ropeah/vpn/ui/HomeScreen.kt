@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -39,6 +40,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -57,11 +61,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ropeah.vpn.R
 import com.ropeah.vpn.data.Protocol
 import com.ropeah.vpn.data.ServerConfig
+import com.ropeah.vpn.data.SessionState
 import com.ropeah.vpn.vpn.TrafficSample
 import com.ropeah.vpn.vpn.VpnStatus
+import kotlinx.coroutines.delay
 
 @Composable
 fun HomeScreen(
+    session: SessionState? = null,
+    onOpenAccount: () -> Unit = {},
     viewModel: VpnViewModel = viewModel(),
     onSelectServer: () -> Unit = {},
 ) {
@@ -71,6 +79,14 @@ fun HomeScreen(
     val connectedSince by viewModel.connectedSince.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
+
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowMs = System.currentTimeMillis()
+            delay(30_000L)
+        }
+    }
 
     val consentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -137,6 +153,15 @@ fun HomeScreen(
     ) {
         StatusPill(status = status)
 
+        if (session != null) {
+            Spacer(Modifier.height(14.dp))
+            AccountStrip(
+                session = session,
+                remainingMs = session.remainingMs(nowMs),
+                onClick = onOpenAccount,
+            )
+        }
+
         Spacer(Modifier.height(14.dp))
 
         ProfileCard(
@@ -173,7 +198,8 @@ fun HomeScreen(
                     }
                 },
                 shape = CircleShape,
-                enabled = server != null || status != VpnStatus.Disconnected,
+                enabled = (server != null || status != VpnStatus.Disconnected) &&
+                    (session == null || session.remainingMs(nowMs) > 0),
                 modifier = Modifier
                     .size(180.dp)
                     .scale(buttonScale),
@@ -202,6 +228,72 @@ fun HomeScreen(
         }
     }
 }
+
+@Composable
+private fun AccountStrip(
+    session: SessionState,
+    remainingMs: Long,
+    onClick: () -> Unit,
+) {
+    val remainingLabel = when {
+        remainingMs <= 0L -> stringResource(R.string.home_expired)
+        remainingMs >= DAY_MS -> stringResource(R.string.home_days_left, (remainingMs / DAY_MS).toInt())
+        else -> stringResource(
+            R.string.home_hours_left,
+            ((remainingMs + HOUR_MS - 1) / HOUR_MS).coerceAtLeast(1L).toInt(),
+        )
+    }
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+            Spacer(Modifier.size(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = session.username,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = remainingLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (remainingMs <= 0L) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = stringResource(R.string.home_config_version, session.configVersion),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private const val HOUR_MS = 3_600_000L
+private const val DAY_MS = 86_400_000L
 
 @Composable
 private fun StatusPill(status: VpnStatus) {

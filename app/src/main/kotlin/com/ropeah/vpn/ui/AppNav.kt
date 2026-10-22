@@ -2,7 +2,6 @@ package com.ropeah.vpn.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,19 +9,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,44 +37,73 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.ropeah.vpn.BuildConfig
 import com.ropeah.vpn.R
-import com.ropeah.vpn.util.LogExporter
+import com.ropeah.vpn.data.SessionState
 import com.ropeah.vpn.ui.CloudflareScanPage
+import com.ropeah.vpn.util.LogExporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.lifecycle.viewmodel.compose.viewModel
 
-private sealed class Tab(val route: String, val labelRes: Int) {
-    data object Home : Tab("home", R.string.nav_home)
-    data object Servers : Tab("servers", R.string.nav_servers)
-    data object Settings : Tab("settings", R.string.nav_settings)
+private sealed class Tab(val route: String, val labelRes: Int, val icon: ImageVector) {
+    data object Home : Tab("home", R.string.nav_home, Icons.Filled.Home)
+    data object Servers : Tab("servers", R.string.nav_servers, Icons.Filled.Dns)
+    data object Account : Tab("account", R.string.nav_account, Icons.Filled.Person)
 }
 
 private const val ROUTE_CLOUDFLARE_SCAN = "cloudflare_scan"
+private const val ROUTE_SETTINGS = "settings"
+
+@Composable
+fun AppNav() {
+    val sessionViewModel: SessionViewModel = viewModel()
+    val session by sessionViewModel.session.collectAsStateWithLifecycle()
+    val ready by sessionViewModel.ready.collectAsStateWithLifecycle()
+
+    when {
+        !ready -> LoadingGate()
+        session == null -> LoginScreen(viewModel = sessionViewModel)
+        else -> MainScaffold(
+            session = session!!,
+            sessionViewModel = sessionViewModel,
+        )
+    }
+}
+
+@Composable
+private fun LoadingGate() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator()
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppNav() {
+private fun MainScaffold(
+    session: SessionState,
+    sessionViewModel: SessionViewModel,
+) {
     val nav = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -80,7 +111,7 @@ fun AppNav() {
     val currentDestination = backStack?.destination
     val onRoute = currentDestination?.route
 
-    val isMainTab = onRoute in listOf(Tab.Home.route, Tab.Servers.route)
+    val isMainTab = onRoute in listOf(Tab.Home.route, Tab.Servers.route, Tab.Account.route)
 
     fun navigateTo(route: String) {
         nav.navigate(route) {
@@ -99,7 +130,6 @@ fun AppNav() {
             ) {
                 Spacer(Modifier.height(24.dp))
 
-                // Drawer header
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -107,20 +137,19 @@ fun AppNav() {
                 ) {
                     Column {
                         Text(
-                            text = "RopeahVPN",
+                            text = "V2EON",
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            text = stringResource(R.string.drawer_subtitle),
+                            text = session.username,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
 
-                // Navigation items
                 DrawerItem(
                     icon = Icons.Filled.Home,
                     label = stringResource(R.string.nav_home),
@@ -140,29 +169,51 @@ fun AppNav() {
                     },
                 )
                 DrawerItem(
-                    icon = Icons.Filled.Cloud,
-                    label = stringResource(R.string.nav_cloudflare_scan),
-                    selected = onRoute == ROUTE_CLOUDFLARE_SCAN,
+                    icon = Icons.Filled.Person,
+                    label = stringResource(R.string.nav_account),
+                    selected = onRoute == Tab.Account.route,
                     onClick = {
-                        nav.navigate(ROUTE_CLOUDFLARE_SCAN) {
-                            popUpTo(nav.graph.findStartDestination().id) { saveState = false }
-                            launchSingleTop = true
-                        }
+                        navigateTo(Tab.Account.route)
                         scope.launch { drawerState.close() }
                     },
                 )
+                if (!BuildConfig.MANAGED_MODE) {
+                    DrawerItem(
+                        icon = Icons.Filled.Cloud,
+                        label = stringResource(R.string.nav_cloudflare_scan),
+                        selected = onRoute == ROUTE_CLOUDFLARE_SCAN,
+                        onClick = {
+                            nav.navigate(ROUTE_CLOUDFLARE_SCAN) {
+                                popUpTo(nav.graph.findStartDestination().id) { saveState = false }
+                                launchSingleTop = true
+                            }
+                            scope.launch { drawerState.close() }
+                        },
+                    )
+                }
                 DrawerItem(
                     icon = Icons.Filled.Settings,
                     label = stringResource(R.string.nav_settings),
-                    selected = onRoute == Tab.Settings.route,
+                    selected = onRoute == ROUTE_SETTINGS,
                     onClick = {
-                        nav.navigate(Tab.Settings.route) {
+                        nav.navigate(ROUTE_SETTINGS) {
                             popUpTo(nav.graph.findStartDestination().id) { saveState = false }
                             launchSingleTop = true
                         }
                         scope.launch { drawerState.close() }
                     },
                 )
+                Spacer(Modifier.weight(1f))
+                DrawerItem(
+                    icon = Icons.AutoMirrored.Filled.Logout,
+                    label = stringResource(R.string.drawer_logout),
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        sessionViewModel.logout()
+                    },
+                )
+                Spacer(Modifier.height(16.dp))
             }
         },
     ) {
@@ -193,7 +244,11 @@ fun AppNav() {
                             }
                         },
                     )
-                    Tab.Settings.route -> DrawerTopBar(
+                    Tab.Account.route -> DrawerTopBar(
+                        title = stringResource(R.string.account_title),
+                        onMenuClick = { scope.launch { drawerState.open() } },
+                    )
+                    ROUTE_SETTINGS -> DrawerTopBar(
                         title = stringResource(R.string.settings_title),
                         onMenuClick = { scope.launch { drawerState.open() } },
                     )
@@ -203,20 +258,13 @@ fun AppNav() {
             bottomBar = {
                 if (isMainTab) {
                     NavigationBar {
-                        listOf(Tab.Home, Tab.Servers).forEach { tab ->
+                        listOf(Tab.Home, Tab.Servers, Tab.Account).forEach { tab ->
                             val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
                             NavigationBarItem(
                                 selected = selected,
                                 onClick = { navigateTo(tab.route) },
                                 icon = {
-                                    Icon(
-                                        imageVector = when (tab) {
-                                            Tab.Home -> Icons.Filled.Home
-                                            Tab.Servers -> Icons.Filled.Dns
-                                            Tab.Settings -> Icons.Filled.Settings
-                                        },
-                                        contentDescription = null,
-                                    )
+                                    Icon(imageVector = tab.icon, contentDescription = null)
                                 },
                                 label = { Text(stringResource(tab.labelRes)) },
                             )
@@ -232,15 +280,21 @@ fun AppNav() {
             ) {
                 composable(Tab.Home.route) {
                     HomeScreen(
-                        onSelectServer = {
-                            navigateTo(Tab.Servers.route)
-                        },
+                        session = session,
+                        onSelectServer = { navigateTo(Tab.Servers.route) },
+                        onOpenAccount = { navigateTo(Tab.Account.route) },
                     )
                 }
                 composable(Tab.Servers.route) {
-                    ServerListScreen()
+                    ServerListScreen(session = session)
                 }
-                composable(Tab.Settings.route) {
+                composable(Tab.Account.route) {
+                    AccountScreen(
+                        session = session,
+                        onLogout = { sessionViewModel.logout() },
+                    )
+                }
+                composable(ROUTE_SETTINGS) {
                     SettingsScreen()
                 }
                 composable(ROUTE_CLOUDFLARE_SCAN) {
@@ -258,7 +312,7 @@ fun AppNav() {
 
 @Composable
 private fun DrawerItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     label: String,
     selected: Boolean,
     onClick: () -> Unit,

@@ -102,7 +102,10 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
+fun ServerListScreen(
+    session: com.ropeah.vpn.data.SessionState? = null,
+    viewModel: VpnViewModel = viewModel(),
+) {
     val servers by viewModel.servers.collectAsStateWithLifecycle()
     val active by viewModel.activeServer.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()

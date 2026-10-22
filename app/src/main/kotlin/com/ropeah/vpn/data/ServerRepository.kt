@@ -74,4 +74,12 @@ class ServerRepository(private val context: Context) {
             }
         }
     }
+
+    /** Removes every stored server. Used on logout in managed mode. */
+    suspend fun clearAll() {
+        context.dataStore.edit { prefs ->
+            prefs[keyServers] = json.encodeToString(emptyList<ServerConfig>())
+            prefs[keyActive] = ""
+        }
+    }
 }
