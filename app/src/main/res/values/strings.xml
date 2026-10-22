@@ -6,6 +6,45 @@
     <string name="status_connecting">Connecting…</string>
     <string name="status_connected">Connected</string>
 
+    <!-- Neo-HUD microcopy -->
+    <string name="neo_secure_link">Secure link established</string>
+    <string name="neo_tap_to_connect">Tap to connect</string>
+    <string name="neo_linking">Linking…</string>
+    <string name="neo_loading">Establishing secure channel</string>
+    <string name="neo_access_terminal">Secure access terminal</string>
+    <string name="neo_identity">Identity</string>
+    <string name="neo_access_key">Access key</string>
+    <string name="neo_no_account_micro">No account? Contact your admin</string>
+    <string name="neo_managed_network">Managed network</string>
+    <string name="neo_managed_by_admin">Servers managed by admin</string>
+    <string name="neo_config_version">Config v%1$d</string>
+    <string name="neo_updated_by_admin">Updated %1$s</string>
+    <string name="neo_recommended">Recommended</string>
+    <string name="neo_active">Active</string>
+    <string name="neo_ping">Ping</string>
+    <string name="neo_down">Down</string>
+    <string name="neo_up">Up</string>
+    <string name="neo_session">Session</string>
+    <string name="neo_select_server">Select server</string>
+    <string name="neo_days_left">Days left</string>
+    <string name="neo_hours_left">Hours left</string>
+    <string name="neo_renew_contact">Renew — contact admin</string>
+    <string name="neo_check_access">Check access</string>
+    <string name="neo_admin_tools">Admin tools</string>
+    <string name="neo_cloudflare_scan_desc">Scan Cloudflare edge IPs</string>
+    <string name="neo_secure_tunnel">Encrypted tunnel active</string>
+    <string name="neo_tunnel_offline">Tunnel offline</string>
+    <string name="neo_negotiating">Negotiating secure tunnel</string>
+    <string name="neo_server">Server</string>
+    <string name="neo_account">Account</string>
+    <string name="neo_config">Config</string>
+    <string name="neo_expires">Expires</string>
+    <string name="neo_last_validated">Last validated</string>
+    <string name="neo_traffic">Traffic</string>
+    <string name="neo_sync">Sync</string>
+    <string name="neo_never">Never</string>
+    <string name="neo_synced_now">Synced just now</string>
+
     <string name="action_connect">Connect</string>
     <string name="action_disconnect">Disconnect</string>
     <string name="action_share_log">Share log</string>
