@@ -1,6 +1,7 @@
 package com.ropeah.vpn.data
 
 import java.util.UUID
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 
 sealed interface SyncResult {
@@ -66,6 +67,10 @@ class ConfigSync(
 fun ApiServerDto.toServerConfig(): ServerConfig? {
     val protocolValue = Protocol.fromApi(protocol) ?: return null
     if (address.isBlank() || port <= 0) return null
+    val rawCountry = countryCode?.trim()
+    val explicitCountryName = countryName?.trim()?.takeIf {
+        it.isNotBlank() && !it.equals("Unknown", ignoreCase = true)
+    }
     return ServerConfig(
         id = id?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString(),
         name = name.ifBlank { "$address:$port" },
@@ -82,5 +87,12 @@ fun ApiServerDto.toServerConfig(): ServerConfig? {
         sni = sni,
         rawUri = uri.orEmpty(),
         source = ServerSource.Remote,
+        countryCode = rawCountry
+            ?.takeIf { it.length == 2 && it.all(Char::isLetter) && it != "??" }
+            ?.uppercase(Locale.US),
+        countryName = explicitCountryName
+            ?: rawCountry?.takeIf { it.length > 2 && it != "??" },
+        flag = flag?.trim()?.takeIf { it.isNotBlank() && it != "🏳️" },
+        city = city?.trim()?.takeIf { it.isNotBlank() },
     )
 }

@@ -40,4 +40,8 @@ data class ServerConfig(
     val sni: String? = null,
     val rawUri: String = "",
     val source: ServerSource = ServerSource.Local,
+    val countryCode: String? = null,
+    val countryName: String? = null,
+    val flag: String? = null,
+    val city: String? = null,
 )

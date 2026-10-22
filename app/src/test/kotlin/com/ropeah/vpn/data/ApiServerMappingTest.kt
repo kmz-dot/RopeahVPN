@@ -3,8 +3,11 @@ package com.ropeah.vpn.data
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import kotlinx.serialization.json.Json
 
 class ApiServerMappingTest {
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     private fun dto(
         protocol: String = "vless",
@@ -60,10 +63,38 @@ class ApiServerMappingTest {
     }
 
     @Test
+    fun `maps country metadata from the backend`() {
+        val payload = """
+            {
+              "name": "🇳🇱 NL · Amsterdam",
+              "protocol": "vless",
+              "address": "a.example",
+              "port": 443,
+              "country": "NL",
+              "countryName": "Netherlands",
+              "flag": "🇳🇱",
+              "city": "Amsterdam"
+            }
+        """.trimIndent()
+        val server = json
+            .decodeFromString<ApiServerDto>(payload)
+            .toServerConfig()!!
+
+        assertEquals("NL", server.countryCode)
+        assertEquals("Netherlands", server.countryName)
+        assertEquals("🇳🇱", server.flag)
+        assertEquals("Amsterdam", server.city)
+    }
+
+    @Test
     fun `defaults source to local for legacy stored json`() {
         val legacy = """{"id":"old","name":"Old","protocol":"VMess","address":"1.1.1.1","port":443,"rawUri":"vmess://x"}"""
-        val server = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val server = json
             .decodeFromString(ServerConfig.serializer(), legacy)
         assertEquals(ServerSource.Local, server.source)
+        assertNull(server.countryCode)
+        assertNull(server.countryName)
+        assertNull(server.flag)
+        assertNull(server.city)
     }
 }

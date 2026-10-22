@@ -53,6 +53,7 @@ import com.ropeah.vpn.R
 import com.ropeah.vpn.data.Protocol
 import com.ropeah.vpn.data.ServerConfig
 import com.ropeah.vpn.data.SessionState
+import com.ropeah.vpn.data.countryLocation
 import com.ropeah.vpn.ui.neo.ConnectOrb
 import com.ropeah.vpn.ui.neo.GlassCard
 import com.ropeah.vpn.ui.neo.HudChip
@@ -222,6 +223,23 @@ private fun ServerPanel(
     latencyMs: Long?,
     onClick: () -> Unit,
 ) {
+    val location = remember(server?.id, server?.countryCode, server?.countryName, server?.flag, server?.name) {
+        server?.countryLocation()
+    }
+    val serverMeta = server?.let { current ->
+        buildString {
+            if (location != null) {
+                location.flag?.takeIf { it.isNotBlank() }?.let { append(it).append(' ') }
+                append(location.countryName)
+                append("  ·  ")
+            }
+            append(protocolLabel(current.protocol))
+            append("  ·  ")
+            append(current.address)
+            append(':')
+            append(current.port)
+        }
+    }
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         highlighted = status != VpnStatus.Disconnected,
@@ -277,7 +295,7 @@ private fun ServerPanel(
                     text = if (server == null) {
                         stringResource(R.string.home_select_server_subtitle)
                     } else {
-                        "${protocolLabel(server.protocol)}  ·  ${server.address}:${server.port}"
+                        serverMeta.orEmpty()
                     },
                     style = HudTinyStyle,
                     color = NeoTextSecondary,

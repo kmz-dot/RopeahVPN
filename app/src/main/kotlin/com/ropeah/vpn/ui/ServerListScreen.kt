@@ -100,6 +100,7 @@ import com.ropeah.vpn.BuildConfig
 import com.ropeah.vpn.R
 import com.ropeah.vpn.data.Protocol
 import com.ropeah.vpn.data.ServerConfig
+import com.ropeah.vpn.data.countryLocation
 import com.ropeah.vpn.ui.neo.GlassBorderGradient
 import com.ropeah.vpn.ui.neo.GlassCard
 import com.ropeah.vpn.ui.neo.HudTinyStyle
@@ -405,6 +406,21 @@ private fun ServerCard(
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
+    val location = remember(server.id, server.countryCode, server.countryName, server.flag, server.name) {
+        server.countryLocation()
+    }
+    val meta = buildString {
+        if (location != null) {
+            location.flag?.takeIf { it.isNotBlank() }?.let { append(it).append(' ') }
+            append(location.countryName)
+            append("  ·  ")
+        }
+        append(protocolLabel(server.protocol))
+        append("  ·  ")
+        append(server.address)
+        append(':')
+        append(server.port)
+    }
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         highlighted = isActive,
@@ -439,7 +455,7 @@ private fun ServerCard(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "${protocolLabel(server.protocol)}  ·  ${server.address}:${server.port}",
+                    text = meta,
                     style = HudTinyStyle,
                     color = NeoTextSecondary,
                     maxLines = 1,

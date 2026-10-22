@@ -40,6 +40,10 @@ data class ApiServerDto(
     val host: String? = null,
     val sni: String? = null,
     val uri: String? = null,
+    @SerialName("country") val countryCode: String? = null,
+    val countryName: String? = null,
+    val flag: String? = null,
+    val city: String? = null,
 )
 
 @Serializable
