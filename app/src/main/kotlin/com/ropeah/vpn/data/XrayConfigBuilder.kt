@@ -1,5 +1,6 @@
 package com.ropeah.vpn.data
 
+import java.io.ByteArrayOutputStream
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -139,11 +140,45 @@ object XrayConfigBuilder {
         }
         if (network == "ws") {
             put("wsSettings", buildJsonObject {
-                s.path?.takeIf { it.isNotBlank() }?.let { put("path", it) }
+                s.path?.takeIf { it.isNotBlank() }?.let { put("path", decodePercentOnce(it)) }
                 s.host?.takeIf { it.isNotBlank() }?.let { host ->
                     put("headers", buildJsonObject { put("Host", host) })
                 }
             })
         }
+    }
+
+    /**
+     * The backend's structured server objects can carry an encoded WS path
+     * (`%2Fvless-ntls`), while Xray takes `wsSettings.path` literally and
+     * dials `/%2Fvless-ntls`. Decode percent escapes once, matching what
+     * [ConfigParser] produces for the same share URI. Invalid escapes are
+     * left untouched.
+     */
+    private fun decodePercentOnce(value: String): String {
+        if ('%' !in value) return value
+        val out = ByteArrayOutputStream(value.length)
+        var plainStart = 0
+        var i = 0
+        while (i < value.length) {
+            if (value[i] == '%' && i + 2 < value.length) {
+                val hi = Character.digit(value[i + 1], 16)
+                val lo = Character.digit(value[i + 2], 16)
+                if (hi >= 0 && lo >= 0) {
+                    if (plainStart < i) {
+                        out.write(value.substring(plainStart, i).toByteArray(Charsets.UTF_8))
+                    }
+                    out.write((hi shl 4) or lo)
+                    i += 3
+                    plainStart = i
+                    continue
+                }
+            }
+            i++
+        }
+        if (plainStart < value.length) {
+            out.write(value.substring(plainStart).toByteArray(Charsets.UTF_8))
+        }
+        return String(out.toByteArray(), Charsets.UTF_8)
     }
 }
