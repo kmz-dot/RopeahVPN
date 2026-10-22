@@ -4,11 +4,14 @@ import android.app.Application
 import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ropeah.vpn.R
 import com.ropeah.vpn.data.ApiClient
 import com.ropeah.vpn.data.ApiException
+import com.ropeah.vpn.data.ConfigSync
 import com.ropeah.vpn.data.ServerRepository
 import com.ropeah.vpn.data.SessionRepository
 import com.ropeah.vpn.data.SessionState
+import com.ropeah.vpn.data.SyncResult
 import com.ropeah.vpn.vpn.RopeahVpnService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,6 +32,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     private val sessionRepo = SessionRepository(app)
     private val serverRepo = ServerRepository(app)
     private val api = ApiClient()
+    private val configSync = ConfigSync(sessionRepo, serverRepo, api)
 
     val session: StateFlow<SessionState?> = sessionRepo.session.stateIn(
         scope = viewModelScope,
@@ -44,6 +48,9 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     private val _loginState = MutableStateFlow(LoginUiState())
     val loginState: StateFlow<LoginUiState> = _loginState
 
+    private val _syncing = MutableStateFlow(false)
+    val syncing: StateFlow<Boolean> = _syncing
+
     private val _syncMessage = MutableStateFlow<String?>(null)
     val syncMessage: StateFlow<String?> = _syncMessage
 
@@ -57,7 +64,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         if (_loginState.value.loading) return
         val name = username.trim()
         if (name.isEmpty()) {
-            _loginState.value = LoginUiState(error = "Enter your username")
+            _loginState.value = LoginUiState(error = getApplication<Application>().getString(R.string.login_username_required))
             return
         }
 
@@ -66,18 +73,19 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
             val deviceNow = System.currentTimeMillis()
             try {
                 val response = api.login(name, pin.trim().takeIf { it.isNotEmpty() })
-                sessionRepo.save(
-                    SessionState(
-                        username = response.username,
-                        token = response.token,
-                        expiresAtMs = response.expiresAt,
-                        serverOffsetMs = response.serverTime - deviceNow,
-                        configVersion = response.configVersion,
-                        lastValidatedMs = deviceNow,
-                        lastSyncMs = 0L,
-                    )
+                val state = SessionState(
+                    username = response.username,
+                    token = response.token,
+                    expiresAtMs = response.expiresAt,
+                    serverOffsetMs = response.serverTime - deviceNow,
+                    configVersion = response.configVersion,
+                    lastValidatedMs = deviceNow,
+                    lastSyncMs = 0L,
                 )
+                sessionRepo.save(state)
                 _loginState.value = LoginUiState()
+                // Best effort: a failed pull must not invalidate a successful login.
+                runSync(state, force = false)
             } catch (e: ApiException.Forbidden) {
                 _loginState.value = LoginUiState(
                     error = e.message ?: "Account is not active",
@@ -93,6 +101,48 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         if (_loginState.value.error != null) _loginState.value = LoginUiState()
     }
 
+    fun syncNow() {
+        viewModelScope.launch {
+            val current = sessionRepo.readOnce() ?: return@launch
+            runSync(current, force = true)
+        }
+    }
+
+    /** Called on app resume: refresh the pushed list when it is older than [maxAgeMs]. */
+    fun syncIfStale(maxAgeMs: Long = 60_000L) {
+        viewModelScope.launch {
+            val current = sessionRepo.readOnce() ?: return@launch
+            val age = System.currentTimeMillis() - current.lastSyncMs
+            if (current.configVersion > 0 && age in 0 until maxAgeMs) return@launch
+            runSync(current, force = false)
+        }
+    }
+
+    private suspend fun runSync(session: SessionState, force: Boolean) {
+        if (_syncing.value) return
+        _syncing.value = true
+        _syncMessage.value = null
+        val result = configSync.sync(session, force)
+        _syncMessage.value = when (result) {
+            is SyncResult.Updated ->
+                getApplication<Application>().getString(R.string.servers_synced, result.version, result.serverCount)
+            is SyncResult.Unchanged ->
+                getApplication<Application>().getString(R.string.servers_sync_unchanged, result.version)
+            is SyncResult.Failed ->
+                getApplication<Application>().getString(R.string.servers_sync_failed, result.message)
+        }
+        if (result is SyncResult.Failed && result.exception is ApiException.Unauthorized) {
+            sessionExpiredLocally()
+        }
+        _syncing.value = false
+    }
+
+    /** 401 on any endpoint means the session is dead: drop the tunnel and lock. */
+    suspend fun sessionExpiredLocally() {
+        stopVpn()
+        sessionRepo.clear()
+    }
+
     fun logout() {
         viewModelScope.launch {
             val current = sessionRepo.readOnce()
@@ -103,6 +153,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
             sessionRepo.clear()
             serverRepo.clearAll()
             _loginState.value = LoginUiState()
+            _syncMessage.value = null
         }
     }
 
@@ -112,9 +163,5 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
             action = RopeahVpnService.ACTION_STOP
         }
         context.startService(intent)
-    }
-
-    fun setSyncMessage(message: String?) {
-        _syncMessage.value = message
     }
 }

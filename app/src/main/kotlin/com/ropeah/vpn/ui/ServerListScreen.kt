@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -93,9 +94,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import com.ropeah.vpn.BuildConfig
 import com.ropeah.vpn.R
 import com.ropeah.vpn.data.Protocol
 import com.ropeah.vpn.data.ServerConfig
+import com.ropeah.vpn.data.SessionState
 import com.ropeah.vpn.util.QrEncoder
 import com.ropeah.vpn.vpn.VpnStatus
 import kotlinx.coroutines.launch
@@ -103,7 +106,10 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ServerListScreen(
-    session: com.ropeah.vpn.data.SessionState? = null,
+    session: SessionState? = null,
+    syncing: Boolean = false,
+    syncMessage: String? = null,
+    onSync: () -> Unit = {},
     viewModel: VpnViewModel = viewModel(),
 ) {
     val servers by viewModel.servers.collectAsStateWithLifecycle()
@@ -111,6 +117,7 @@ fun ServerListScreen(
     val status by viewModel.status.collectAsStateWithLifecycle()
     val latencyMap by viewModel.latencyMap.collectAsStateWithLifecycle()
     val pinging by viewModel.pinging.collectAsStateWithLifecycle()
+    val managed = BuildConfig.MANAGED_MODE
     var addOpen by remember { mutableStateOf(false) }
     var contextTarget by remember { mutableStateOf<ServerConfig?>(null) }
     var qrTarget by remember { mutableStateOf<ServerConfig?>(null) }
@@ -155,7 +162,7 @@ fun ServerListScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
-            if (servers.isNotEmpty()) {
+            if (!managed && servers.isNotEmpty()) {
                 FloatingActionButton(onClick = { addOpen = true }) {
                     Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.servers_fab_add))
                 }
@@ -166,6 +173,9 @@ fun ServerListScreen(
         if (servers.isEmpty()) {
             EmptyServers(
                 onAdd = { addOpen = true },
+                managed = managed,
+                syncing = syncing,
+                onSync = onSync,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
@@ -178,6 +188,16 @@ fun ServerListScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (managed) {
+                    item(key = "managed-header") {
+                        ManagedHeader(
+                            session = session,
+                            syncing = syncing,
+                            message = syncMessage,
+                            onSync = onSync,
+                        )
+                    }
+                }
                 items(servers, key = { it.id }) { server ->
                     val isActive = server.id == active?.id
                     val latencyMs = latencyMap[server.id]
@@ -223,6 +243,7 @@ fun ServerListScreen(
             server = target,
             isActive = target.id == active?.id,
             isPinging = isPinging,
+            managed = managed,
             sheetState = sheetState,
             onDismiss = { contextTarget = null },
             onSetActive = {
@@ -267,6 +288,70 @@ fun ServerListScreen(
             viewModel = viewModel,
             onDismiss = { scanTarget = null },
         )
+    }
+}
+
+@Composable
+private fun ManagedHeader(
+    session: SessionState?,
+    syncing: Boolean,
+    message: String?,
+    onSync: () -> Unit,
+) {
+    val updated = remember(session?.lastSyncMs) {
+        val at = session?.lastSyncMs ?: 0L
+        if (at <= 0L) null else java.text.SimpleDateFormat(
+            "d MMM, HH:mm",
+            java.util.Locale.getDefault(),
+        ).format(java.util.Date(at))
+    }
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(
+                            R.string.servers_managed_header,
+                            session?.configVersion ?: 0,
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.servers_managed_updated,
+                            updated ?: stringResource(R.string.servers_managed_never),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (syncing) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Button(onClick = onSync) {
+                        Icon(
+                            imageVector = Icons.Filled.Sync,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.servers_sync))
+                    }
+                }
+            }
+            if (message != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -457,6 +542,9 @@ private fun protocolLabel(protocol: Protocol): String = when (protocol) {
 @Composable
 private fun EmptyServers(
     onAdd: () -> Unit,
+    managed: Boolean = false,
+    syncing: Boolean = false,
+    onSync: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -489,16 +577,32 @@ private fun EmptyServers(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = stringResource(R.string.servers_empty_subtitle),
+            text = if (managed) stringResource(R.string.servers_empty_managed)
+            else stringResource(R.string.servers_empty_subtitle),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
         Spacer(Modifier.height(24.dp))
-        Button(onClick = onAdd) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.servers_fab_add))
+        if (managed) {
+            Button(onClick = onSync, enabled = !syncing) {
+                if (syncing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Icon(Icons.Filled.Sync, contentDescription = null)
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.servers_sync))
+            }
+        } else {
+            Button(onClick = onAdd) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.servers_fab_add))
+            }
         }
     }
 }
@@ -509,6 +613,7 @@ private fun ServerContextSheet(
     server: ServerConfig,
     isActive: Boolean,
     isPinging: Boolean,
+    managed: Boolean = false,
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onSetActive: () -> Unit,
@@ -530,12 +635,14 @@ private fun ServerContextSheet(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             )
-            if (!isActive) {
+            if (!managed && !isActive) {
                 ContextRow(Icons.Filled.Wifi, stringResource(R.string.server_action_set_active), onSetActive)
             }
-            ContextRow(Icons.Filled.QrCode2, stringResource(R.string.server_action_show_qr), onShowQr)
-            ContextRow(Icons.Filled.ContentCopy, stringResource(R.string.server_action_copy_uri), onCopy)
-            ContextRow(Icons.Filled.Share, stringResource(R.string.server_action_share_uri), onShare)
+            if (!managed) {
+                ContextRow(Icons.Filled.QrCode2, stringResource(R.string.server_action_show_qr), onShowQr)
+                ContextRow(Icons.Filled.ContentCopy, stringResource(R.string.server_action_copy_uri), onCopy)
+                ContextRow(Icons.Filled.Share, stringResource(R.string.server_action_share_uri), onShare)
+            }
             ContextRow(
                 icon = Icons.Filled.Sync,
                 label = stringResource(R.string.server_action_test_latency),
@@ -543,17 +650,19 @@ private fun ServerContextSheet(
                 tint = if (isPinging) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                        else MaterialTheme.colorScheme.onSurface,
             )
-            ContextRow(
-                icon = Icons.Filled.Search,
-                label = stringResource(R.string.server_action_scan_ips),
-                onClick = onScanIps,
-            )
-            ContextRow(
-                icon = Icons.Filled.Delete,
-                label = stringResource(R.string.server_action_delete),
-                onClick = onDelete,
-                tint = MaterialTheme.colorScheme.error,
-            )
+            if (!managed) {
+                ContextRow(
+                    icon = Icons.Filled.Search,
+                    label = stringResource(R.string.server_action_scan_ips),
+                    onClick = onScanIps,
+                )
+                ContextRow(
+                    icon = Icons.Filled.Delete,
+                    label = stringResource(R.string.server_action_delete),
+                    onClick = onDelete,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
             Spacer(Modifier.height(16.dp))
         }
     }

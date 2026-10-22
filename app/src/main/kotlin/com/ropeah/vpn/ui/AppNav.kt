@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -49,6 +50,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -110,6 +114,17 @@ private fun MainScaffold(
     val backStack by nav.currentBackStackEntryAsState()
     val currentDestination = backStack?.destination
     val onRoute = currentDestination?.route
+    val syncing by sessionViewModel.syncing.collectAsStateWithLifecycle()
+    val syncMessage by sessionViewModel.syncMessage.collectAsStateWithLifecycle()
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, sessionViewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) sessionViewModel.syncIfStale()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val isMainTab = onRoute in listOf(Tab.Home.route, Tab.Servers.route, Tab.Account.route)
 
@@ -286,7 +301,12 @@ private fun MainScaffold(
                     )
                 }
                 composable(Tab.Servers.route) {
-                    ServerListScreen(session = session)
+                    ServerListScreen(
+                        session = session,
+                        syncing = syncing,
+                        syncMessage = syncMessage,
+                        onSync = { sessionViewModel.syncNow() },
+                    )
                 }
                 composable(Tab.Account.route) {
                     AccountScreen(

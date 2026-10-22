@@ -104,6 +104,7 @@
     <string name="login_title">V2EON</string>
     <string name="login_subtitle">Enter the account your admin created for you.</string>
     <string name="login_username">Username</string>
+    <string name="login_username_required">Enter your username</string>
     <string name="login_pin">PIN</string>
     <string name="login_pin_hint">Leave blank if no PIN was set</string>
     <string name="login_activate">Activate</string>
