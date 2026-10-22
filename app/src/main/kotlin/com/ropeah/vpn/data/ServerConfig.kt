@@ -4,7 +4,24 @@ import kotlinx.serialization.Serializable
 import java.util.UUID
 
 @Serializable
-enum class Protocol { VMess, VLESS, Trojan, Shadowsocks }
+enum class Protocol {
+    VMess, VLESS, Trojan, Shadowsocks;
+
+    companion object {
+        /** Backend sends lowercase protocol names; unknown values are rejected. */
+        fun fromApi(value: String): Protocol? = when (value.trim().lowercase()) {
+            "vmess" -> VMess
+            "vless" -> VLESS
+            "trojan" -> Trojan
+            "shadowsocks", "ss" -> Shadowsocks
+            else -> null
+        }
+    }
+}
+
+/** Where a config came from. Local remains the default so old stored JSON decodes. */
+@Serializable
+enum class ServerSource { Local, Remote }
 
 @Serializable
 data class ServerConfig(
@@ -21,5 +38,10 @@ data class ServerConfig(
     val path: String? = null,
     val host: String? = null,
     val sni: String? = null,
-    val rawUri: String,
+    val rawUri: String = "",
+    val source: ServerSource = ServerSource.Local,
+    val countryCode: String? = null,
+    val countryName: String? = null,
+    val flag: String? = null,
+    val city: String? = null,
 )

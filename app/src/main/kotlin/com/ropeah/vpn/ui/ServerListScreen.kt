@@ -16,6 +16,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -52,6 +53,7 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -85,6 +87,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -93,21 +96,48 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import com.ropeah.vpn.BuildConfig
 import com.ropeah.vpn.R
 import com.ropeah.vpn.data.Protocol
 import com.ropeah.vpn.data.ServerConfig
+import com.ropeah.vpn.data.ServerGeoCache
+import com.ropeah.vpn.data.ServerLocation
+import com.ropeah.vpn.data.countryLocation
+import com.ropeah.vpn.ui.neo.GlassBorderGradient
+import com.ropeah.vpn.ui.neo.GlassCard
+import com.ropeah.vpn.ui.neo.HudTinyStyle
+import com.ropeah.vpn.ui.neo.LatencyMeter
+import com.ropeah.vpn.ui.neo.MicroLabel
+import com.ropeah.vpn.ui.neo.NeoBadge
+import com.ropeah.vpn.ui.neo.NeoIconPill
+import com.ropeah.vpn.ui.neo.NeoPrimaryButton
+import com.ropeah.vpn.ui.neo.neonBorderGradient
+import com.ropeah.vpn.ui.theme.NeoCyan
+import com.ropeah.vpn.ui.theme.NeoTeal
+import com.ropeah.vpn.ui.theme.NeoTextPrimary
+import com.ropeah.vpn.ui.theme.NeoTextSecondary
+import com.ropeah.vpn.vpn.TrafficSample
+import com.ropeah.vpn.data.SessionState
 import com.ropeah.vpn.util.QrEncoder
 import com.ropeah.vpn.vpn.VpnStatus
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
+fun ServerListScreen(
+    session: SessionState? = null,
+    syncing: Boolean = false,
+    syncMessage: String? = null,
+    onSync: () -> Unit = {},
+    viewModel: VpnViewModel = viewModel(),
+) {
     val servers by viewModel.servers.collectAsStateWithLifecycle()
     val active by viewModel.activeServer.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()
     val latencyMap by viewModel.latencyMap.collectAsStateWithLifecycle()
     val pinging by viewModel.pinging.collectAsStateWithLifecycle()
+    val geoLocations by ServerGeoCache.locations.collectAsStateWithLifecycle()
+    val managed = BuildConfig.MANAGED_MODE
     var addOpen by remember { mutableStateOf(false) }
     var contextTarget by remember { mutableStateOf<ServerConfig?>(null) }
     var qrTarget by remember { mutableStateOf<ServerConfig?>(null) }
@@ -151,8 +181,9 @@ fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
+        containerColor = Color.Transparent,
         floatingActionButton = {
-            if (servers.isNotEmpty()) {
+            if (!managed && servers.isNotEmpty()) {
                 FloatingActionButton(onClick = { addOpen = true }) {
                     Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.servers_fab_add))
                 }
@@ -163,29 +194,70 @@ fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
         if (servers.isEmpty()) {
             EmptyServers(
                 onAdd = { addOpen = true },
+                managed = managed,
+                syncing = syncing,
+                onSync = onSync,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
             )
         } else {
+            val recommendedId = servers
+                .mapNotNull { candidate ->
+                    latencyMap[candidate.id]
+                        ?.takeIf { it > 0L }
+                        ?.let { candidate.id to it }
+                }
+                .minByOrNull { it.second }
+                ?.first
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(horizontal = 16.dp),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 4.dp,
+                    bottom = 12.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (managed) {
+                    item(key = "managed-header") {
+                        ManagedHeader(
+                            session = session,
+                            syncing = syncing,
+                            message = syncMessage,
+                            onSync = onSync,
+                        )
+                    }
+                }
                 items(servers, key = { it.id }) { server ->
                     val isActive = server.id == active?.id
                     val latencyMs = latencyMap[server.id]
                     val isPinging = pinging.contains(server.id)
+                    val baseLocation = remember(
+                        server.id,
+                        server.countryCode,
+                        server.countryName,
+                        server.flag,
+                        server.name,
+                    ) {
+                        server.countryLocation()
+                    }
+                    val location = baseLocation ?: geoLocations[server.address]
+                    LaunchedEffect(server.address, baseLocation) {
+                        if (baseLocation == null) ServerGeoCache.request(server.address)
+                    }
                     ServerCard(
                         server = server,
+                        location = location,
                         isActive = isActive,
                         isConnected = isActive && status == VpnStatus.Connected,
                         isConnecting = isActive && status == VpnStatus.Connecting,
                         latencyMs = latencyMs,
                         isPinging = isPinging,
+                        isRecommended = server.id == recommendedId,
                         onTap = { viewModel.selectServer(server) },
                         onLongPress = { contextTarget = server },
                     )
@@ -220,6 +292,7 @@ fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
             server = target,
             isActive = target.id == active?.id,
             isPinging = isPinging,
+            managed = managed,
             sheetState = sheetState,
             onDismiss = { contextTarget = null },
             onSetActive = {
@@ -267,76 +340,165 @@ fun ServerListScreen(viewModel: VpnViewModel = viewModel()) {
     }
 }
 
+@Composable
+private fun ManagedHeader(
+    session: SessionState?,
+    syncing: Boolean,
+    message: String?,
+    onSync: () -> Unit,
+) {
+    val updated = remember(session?.lastSyncMs) {
+        val at = session?.lastSyncMs ?: 0L
+        if (at <= 0L) null else java.text.SimpleDateFormat(
+            "d MMM, HH:mm",
+            java.util.Locale.getDefault(),
+        ).format(java.util.Date(at))
+    }
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 15.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(6.dp)
+                            .background(NeoTeal, CircleShape),
+                    )
+                    Spacer(Modifier.width(7.dp))
+                    MicroLabel(
+                        text = stringResource(R.string.neo_managed_network),
+                        color = NeoTeal,
+                    )
+                }
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    text = stringResource(
+                        R.string.neo_updated_admin_config,
+                        session?.configVersion ?: 0,
+                    ),
+                    style = HudTinyStyle,
+                    color = NeoTextPrimary,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = stringResource(
+                        R.string.neo_updated_by_admin,
+                        updated ?: stringResource(R.string.neo_never),
+                    ),
+                    style = HudTinyStyle,
+                    color = NeoTextSecondary,
+                )
+            }
+            NeoIconPill(
+                icon = Icons.Filled.Sync,
+                contentDescription = stringResource(R.string.servers_sync),
+                onClick = onSync,
+                loading = syncing,
+                enabled = !syncing,
+            )
+        }
+        if (message != null) {
+            Spacer(Modifier.height(9.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = NeoTextSecondary,
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ServerCard(
     server: ServerConfig,
+    location: ServerLocation?,
     isActive: Boolean,
     isConnected: Boolean,
     isConnecting: Boolean,
     latencyMs: Long?,
     isPinging: Boolean,
+    isRecommended: Boolean,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
-    val borderAlpha = if (isActive) 1f else 0f
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = if (isActive)
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-        else
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .combinedClickable(onClick = onTap, onLongClick = onLongPress),
+    val meta = buildString {
+        if (location != null) {
+            location.flag?.takeIf { it.isNotBlank() }?.let { append(it).append(' ') }
+            append(location.countryName)
+            append("  ·  ")
+        }
+        append(protocolLabel(server.protocol))
+        append("  ·  ")
+        append(server.address)
+        append(':')
+        append(server.port)
+    }
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        highlighted = isActive,
+        onClick = onTap,
+        onLongClick = onLongPress,
+        contentPadding = PaddingValues(horizontal = 15.dp, vertical = 14.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             ProtocolAvatar(
                 protocol = server.protocol,
-                accentAlpha = if (isActive) 1f else borderAlpha + 0.6f,
+                flag = location?.flag,
+                active = isActive,
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = server.name,
-                        fontSize = 16.sp,
-                        fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = NeoTextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (isActive) {
+                    if (!isActive && isRecommended) {
                         Spacer(Modifier.width(8.dp))
-                        ActiveDot(
-                            isConnected = isConnected,
-                            isConnecting = isConnecting,
+                        NeoBadge(
+                            text = stringResource(R.string.neo_recommended),
+                            accent = NeoCyan,
+                            filled = true,
                         )
                     }
                 }
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = meta,
+                    style = HudTinyStyle,
+                    color = NeoTextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "${protocolLabel(server.protocol)}  ·  ${server.address}:${server.port}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
                     if (latencyMs != null) {
-                        Spacer(Modifier.width(8.dp))
-                        LatencyBadge(latencyMs = latencyMs)
+                        LatencyMeter(latencyMs = latencyMs)
                     } else if (isPinging) {
-                        Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "...",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            text = "SCANNING…",
+                            style = HudTinyStyle,
+                            color = NeoTextSecondary.copy(alpha = 0.65f),
+                        )
+                    } else {
+                        Text(
+                            text = "--",
+                            style = HudTinyStyle,
+                            color = NeoTextSecondary.copy(alpha = 0.65f),
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (isActive) {
+                        ActiveDot(
+                            isConnected = isConnected,
+                            isConnecting = isConnecting,
                         )
                     }
                 }
@@ -345,71 +507,67 @@ private fun ServerCard(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = if (isActive) NeoTeal else NeoTextSecondary.copy(alpha = 0.8f),
             )
         }
     }
 }
 
 @Composable
-private fun LatencyBadge(latencyMs: Long) {
-    val (color, label) = when {
-        latencyMs < 0L -> MaterialTheme.colorScheme.onSurfaceVariant to "timeout"
-        latencyMs < 100 -> Color(0xFF4ADE80) to "${latencyMs}ms"
-        latencyMs < 300 -> Color(0xFFFACC15) to "${latencyMs}ms"
-        else -> Color(0xFFFF6B6B) to "${latencyMs}ms"
-    }
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = color.copy(alpha = 0.15f),
-    ) {
-        Text(
-            text = label,
-            color = color,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-        )
-    }
-}
-
-@Composable
-private fun ProtocolAvatar(protocol: Protocol, accentAlpha: Float) {
-    val accent = MaterialTheme.colorScheme.primary
+private fun ProtocolAvatar(protocol: Protocol, flag: String?, active: Boolean) {
     Box(
         modifier = Modifier
-            .size(42.dp)
-            .background(accent.copy(alpha = 0.18f * accentAlpha), CircleShape),
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.05f))
+            .border(
+                1.dp,
+                if (active) neonBorderGradient(0.55f) else GlassBorderGradient,
+                CircleShape,
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = protocolInitial(protocol),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = accent,
-        )
+        if (!flag.isNullOrBlank()) {
+            Text(
+                text = flag,
+                fontSize = 22.sp,
+                lineHeight = 24.sp,
+            )
+        } else {
+            Text(
+                text = protocolInitial(protocol),
+                style = MaterialTheme.typography.titleMedium,
+                color = if (active) NeoTeal else NeoTextSecondary,
+            )
+        }
     }
 }
 
 @Composable
 private fun ActiveDot(isConnected: Boolean, isConnecting: Boolean) {
-    val transition = rememberInfiniteTransition(label = "serverActiveDot")
-    val pulse by transition.animateFloat(
-        initialValue = if (isConnecting) 0.3f else 0.55f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = if (isConnecting) 700 else 1400,
-                easing = FastOutSlowInEasing,
+    val reduced = com.ropeah.vpn.ui.neo.rememberReducedMotion()
+    val pulse = if (reduced) {
+        1f
+    } else {
+        val transition = rememberInfiniteTransition(label = "serverActiveDot")
+        val value by transition.animateFloat(
+            initialValue = if (isConnecting) 0.3f else 0.55f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = if (isConnecting) 700 else 1400,
+                    easing = FastOutSlowInEasing,
+                ),
+                repeatMode = RepeatMode.Reverse,
             ),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "serverActiveDotPulse",
-    )
+            label = "serverActiveDotPulse",
+        )
+        value
+    }
     val color = when {
-        isConnected -> Color(0xFF4ADE80)
-        isConnecting -> Color(0xFFFACC15)
-        else -> MaterialTheme.colorScheme.primary
+        isConnected -> NeoTeal
+        isConnecting -> NeoCyan
+        else -> NeoTextSecondary
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(contentAlignment = Alignment.Center) {
@@ -417,22 +575,21 @@ private fun ActiveDot(isConnected: Boolean, isConnecting: Boolean) {
                 Box(
                     Modifier
                         .size(16.dp)
-                        .alpha(0.30f * pulse)
+                        .alpha(0.28f * pulse)
                         .background(color, CircleShape),
                 )
             }
             Box(
                 Modifier
-                    .size(8.dp)
+                    .size(7.dp)
                     .background(color, CircleShape),
             )
         }
         Spacer(Modifier.width(6.dp))
         Text(
-            text = stringResource(R.string.server_status_active),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium,
+            text = stringResource(R.string.server_status_active).uppercase(),
+            style = HudTinyStyle,
+            color = color,
         )
     }
 }
@@ -454,48 +611,67 @@ private fun protocolLabel(protocol: Protocol): String = when (protocol) {
 @Composable
 private fun EmptyServers(
     onAdd: () -> Unit,
+    managed: Boolean = false,
+    syncing: Boolean = false,
+    onSync: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier.padding(horizontal = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+    Box(
+        modifier = modifier.padding(horizontal = 20.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .size(96.dp)
-                .background(
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    CircleShape,
-                ),
-            contentAlignment = Alignment.Center,
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 28.dp),
         ) {
-            Icon(
-                imageVector = Icons.Filled.CloudOff,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(44.dp),
-            )
-        }
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = stringResource(R.string.servers_empty_title),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = stringResource(R.string.servers_empty_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = onAdd) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.servers_fab_add))
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier
+                        .size(84.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.05f))
+                        .border(1.dp, neonBorderGradient(0.32f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CloudOff,
+                        contentDescription = null,
+                        tint = NeoTeal,
+                        modifier = Modifier.size(38.dp),
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = stringResource(R.string.servers_empty_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = NeoTextPrimary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = if (managed) stringResource(R.string.servers_empty_managed)
+                    else stringResource(R.string.servers_empty_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = NeoTextSecondary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Spacer(Modifier.height(24.dp))
+                if (managed) {
+                    NeoPrimaryButton(
+                        text = stringResource(R.string.servers_sync),
+                        onClick = onSync,
+                        enabled = !syncing,
+                        loading = syncing,
+                        icon = Icons.Filled.Sync,
+                    )
+                } else {
+                    NeoPrimaryButton(
+                        text = stringResource(R.string.servers_fab_add),
+                        onClick = onAdd,
+                        icon = Icons.Filled.Add,
+                    )
+                }
+            }
         }
     }
 }
@@ -506,6 +682,7 @@ private fun ServerContextSheet(
     server: ServerConfig,
     isActive: Boolean,
     isPinging: Boolean,
+    managed: Boolean = false,
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onSetActive: () -> Unit,
@@ -527,12 +704,14 @@ private fun ServerContextSheet(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             )
-            if (!isActive) {
+            if (!managed && !isActive) {
                 ContextRow(Icons.Filled.Wifi, stringResource(R.string.server_action_set_active), onSetActive)
             }
-            ContextRow(Icons.Filled.QrCode2, stringResource(R.string.server_action_show_qr), onShowQr)
-            ContextRow(Icons.Filled.ContentCopy, stringResource(R.string.server_action_copy_uri), onCopy)
-            ContextRow(Icons.Filled.Share, stringResource(R.string.server_action_share_uri), onShare)
+            if (!managed) {
+                ContextRow(Icons.Filled.QrCode2, stringResource(R.string.server_action_show_qr), onShowQr)
+                ContextRow(Icons.Filled.ContentCopy, stringResource(R.string.server_action_copy_uri), onCopy)
+                ContextRow(Icons.Filled.Share, stringResource(R.string.server_action_share_uri), onShare)
+            }
             ContextRow(
                 icon = Icons.Filled.Sync,
                 label = stringResource(R.string.server_action_test_latency),
@@ -540,17 +719,19 @@ private fun ServerContextSheet(
                 tint = if (isPinging) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                        else MaterialTheme.colorScheme.onSurface,
             )
-            ContextRow(
-                icon = Icons.Filled.Search,
-                label = stringResource(R.string.server_action_scan_ips),
-                onClick = onScanIps,
-            )
-            ContextRow(
-                icon = Icons.Filled.Delete,
-                label = stringResource(R.string.server_action_delete),
-                onClick = onDelete,
-                tint = MaterialTheme.colorScheme.error,
-            )
+            if (!managed) {
+                ContextRow(
+                    icon = Icons.Filled.Search,
+                    label = stringResource(R.string.server_action_scan_ips),
+                    onClick = onScanIps,
+                )
+                ContextRow(
+                    icon = Icons.Filled.Delete,
+                    label = stringResource(R.string.server_action_delete),
+                    onClick = onDelete,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
             Spacer(Modifier.height(16.dp))
         }
     }

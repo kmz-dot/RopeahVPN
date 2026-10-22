@@ -6,11 +6,19 @@ import android.content.Intent
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ropeah.vpn.BuildConfig
+import com.ropeah.vpn.R
+import com.ropeah.vpn.data.ApiClient
+import com.ropeah.vpn.data.ApiException
 import com.ropeah.vpn.data.AppSettings
 import com.ropeah.vpn.data.ConfigParser
 import com.ropeah.vpn.data.IpScanner
+import com.ropeah.vpn.data.PingRequest
 import com.ropeah.vpn.data.ServerConfig
 import com.ropeah.vpn.data.ServerRepository
+import com.ropeah.vpn.data.SessionGuard
+import com.ropeah.vpn.data.SessionRepository
+import com.ropeah.vpn.data.SessionState
 import com.ropeah.vpn.data.SettingsRepository
 import com.ropeah.vpn.vpn.RopeahVpnService
 import com.ropeah.vpn.vpn.TrafficSample
@@ -33,6 +41,8 @@ import java.net.Socket
 class VpnViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = ServerRepository(app)
     private val settingsRepo = SettingsRepository(app)
+    private val sessionRepo = SessionRepository(app)
+    private val api = ApiClient()
 
     val servers: StateFlow<List<ServerConfig>> = repo.servers.stateIn(
         scope = viewModelScope,
@@ -147,11 +157,110 @@ class VpnViewModel(app: Application) : AndroidViewModel(app) {
         return parsed.name
     }
 
+    /** Why the last connect attempt was blocked; cleared by the UI once shown. */
+    private val _connectBlocked = MutableStateFlow<String?>(null)
+    val connectBlocked: StateFlow<String?> = _connectBlocked
+
+    fun clearConnectBlocked() {
+        _connectBlocked.value = null
+    }
+
+    /**
+     * Connect policy gate. Locally expired sessions never start; stale sessions
+     * are revalidated against the backend first, and a dead session is dropped.
+     */
     fun startVpn(context: Context) {
+        viewModelScope.launch {
+            if (!BuildConfig.MANAGED_MODE) {
+                launchService(context)
+                return@launch
+            }
+            val app = getApplication<Application>()
+            val session = sessionRepo.readOnce()
+            when (SessionGuard.connectDecision(session, System.currentTimeMillis())) {
+                SessionGuard.ConnectDecision.Allow -> launchService(context)
+                SessionGuard.ConnectDecision.Revalidate -> {
+                    val ok = session != null && revalidate(session)
+                    if (ok) {
+                        launchService(context)
+                    } else {
+                        val current = sessionRepo.readOnce()
+                        _connectBlocked.value = when {
+                            current == null -> app.getString(R.string.connect_no_session)
+                            current.suspended -> app.getString(R.string.connect_suspended)
+                            SessionGuard.isExpired(current, System.currentTimeMillis()) ->
+                                app.getString(R.string.connect_expired)
+                            else -> app.getString(R.string.connect_needs_online)
+                        }
+                    }
+                }
+                SessionGuard.ConnectDecision.DenyExpired -> {
+                    stopVpn(context)
+                    _connectBlocked.value = app.getString(R.string.connect_expired)
+                }
+                SessionGuard.ConnectDecision.DenySuspended -> {
+                    stopVpn(context)
+                    _connectBlocked.value = app.getString(R.string.connect_suspended)
+                }
+                SessionGuard.ConnectDecision.DenyNoSession -> {
+                    _connectBlocked.value = app.getString(R.string.connect_no_session)
+                }
+            }
+        }
+    }
+
+    private fun launchService(context: Context) {
         val intent = Intent(context, RopeahVpnService::class.java).apply {
             action = RopeahVpnService.ACTION_START
         }
         ContextCompat.startForegroundService(context, intent)
+    }
+
+    /** Returns true when the session is still alive after talking to the backend. */
+    private suspend fun revalidate(session: SessionState): Boolean {
+        val deviceNow = System.currentTimeMillis()
+        return try {
+            val response = api.ping(
+                token = session.token,
+                body = PingRequest(
+                    configVersion = session.configVersion,
+                    connected = false,
+                ),
+            )
+            if (response.revoked) {
+                sessionRepo.clear()
+                false
+            } else {
+                sessionRepo.updateFromServer(
+                    serverTime = response.serverTime ?: (deviceNow + session.serverOffsetMs),
+                    expiresAt = response.expiresAt,
+                    configVersion = response.configVersion,
+                    deviceNow = deviceNow,
+                    expectedToken = session.token,
+                )
+                !SessionGuard.isLocked(sessionRepo.readOnce(), deviceNow)
+            }
+        } catch (e: ApiException.Unauthorized) {
+            sessionRepo.clear()
+            false
+        } catch (e: ApiException.Forbidden) {
+            val serverTime = e.serverTime
+            val expiresAt = e.expiresAt
+            if (serverTime != null) {
+                sessionRepo.applyServerClock(
+                    serverTime = serverTime,
+                    expiresAt = expiresAt,
+                    deviceNow = deviceNow,
+                    expectedToken = session.token,
+                    suspended = expiresAt == null || expiresAt > serverTime,
+                )
+            } else {
+                sessionRepo.markSuspended(session.token)
+            }
+            false
+        } catch (e: ApiException) {
+            false
+        }
     }
 
     fun stopVpn(context: Context) {

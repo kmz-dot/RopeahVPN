@@ -74,4 +74,34 @@ class ServerRepository(private val context: Context) {
             }
         }
     }
+
+    /** Removes every stored server. Used on logout in managed mode. */
+    suspend fun clearAll() {
+        context.dataStore.edit { prefs ->
+            prefs[keyServers] = json.encodeToString(emptyList<ServerConfig>())
+            prefs[keyActive] = ""
+        }
+    }
+
+    /**
+     * Replaces the whole list in a single edit and resolves the active server in
+     * the same transaction, so Home never observes a null active server mid-sync.
+     */
+    suspend fun replaceAll(incoming: List<ServerConfig>) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[keyServers]?.let {
+                runCatching { json.decodeFromString<List<ServerConfig>>(it) }.getOrDefault(emptyList())
+            } ?: emptyList()
+            val oldActiveId = prefs[keyActive]
+            val oldActive = oldActiveId?.let { id -> current.firstOrNull { it.id == id } }
+
+            val nextActive = ServerMerge.pickActiveId(oldActive, incoming)
+            prefs[keyServers] = json.encodeToString(incoming)
+            if (nextActive != null) {
+                prefs[keyActive] = nextActive
+            } else {
+                prefs.remove(keyActive)
+            }
+        }
+    }
 }

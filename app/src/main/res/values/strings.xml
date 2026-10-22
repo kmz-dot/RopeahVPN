@@ -6,6 +6,48 @@
     <string name="status_connecting">Connecting…</string>
     <string name="status_connected">Connected</string>
 
+    <!-- Neo-HUD microcopy -->
+    <string name="neo_secure_link">Secure link established</string>
+    <string name="neo_tap_to_connect">Tap to connect</string>
+    <string name="neo_linking">Linking…</string>
+    <string name="neo_loading">Establishing secure channel</string>
+    <string name="neo_access_terminal">Secure access terminal</string>
+    <string name="neo_identity">Identity</string>
+    <string name="neo_access_key">Access key</string>
+    <string name="neo_no_account_micro">No account? Contact admin</string>
+    <string name="neo_managed_network">Managed network</string>
+    <string name="neo_managed_by_admin">Server managed by admin</string>
+    <string name="neo_updated_admin_config">UPDATED BY ADMIN · CONFIG v%1$d</string>
+    <string name="neo_account_expired">Account expired</string>
+    <string name="neo_access_locked">Access locked</string>
+    <string name="neo_config_version">Config v%1$d</string>
+    <string name="neo_updated_by_admin">Updated %1$s</string>
+    <string name="neo_recommended">Recommended</string>
+    <string name="neo_active">Active</string>
+    <string name="neo_ping">Ping</string>
+    <string name="neo_down">Down</string>
+    <string name="neo_up">Up</string>
+    <string name="neo_session">Session</string>
+    <string name="neo_select_server">Select server</string>
+    <string name="neo_days_left">Days left</string>
+    <string name="neo_hours_left">Hours left</string>
+    <string name="neo_renew_contact">Renew — contact admin</string>
+    <string name="neo_check_access">Check access</string>
+    <string name="neo_admin_tools">Admin tools</string>
+    <string name="neo_cloudflare_scan_desc">Scan Cloudflare edge IPs</string>
+    <string name="neo_secure_tunnel">Encrypted tunnel active</string>
+    <string name="neo_tunnel_offline">Tunnel offline</string>
+    <string name="neo_negotiating">Negotiating secure tunnel</string>
+    <string name="neo_server">Server</string>
+    <string name="neo_account">Account</string>
+    <string name="neo_config">Config</string>
+    <string name="neo_expires">Expires</string>
+    <string name="neo_last_validated">Last validated</string>
+    <string name="neo_traffic">Traffic</string>
+    <string name="neo_sync">Sync</string>
+    <string name="neo_never">Never</string>
+    <string name="neo_synced_now">Synced just now</string>
+
     <string name="action_connect">Connect</string>
     <string name="action_disconnect">Disconnect</string>
     <string name="action_share_log">Share log</string>
@@ -99,4 +141,57 @@
 
     <string name="settings_section_about">About</string>
     <string name="settings_version">Version</string>
+
+    <!-- Managed session -->
+    <string name="login_title">V2EON</string>
+    <string name="login_subtitle">Enter the account your admin created for you.</string>
+    <string name="login_username">Username</string>
+    <string name="login_username_required">Enter your username</string>
+    <string name="login_pin">PIN</string>
+    <string name="login_pin_hint">Leave blank if no PIN was set</string>
+    <string name="login_activate">Activate</string>
+    <string name="connect_expired">Your access has expired. Contact your admin.</string>
+    <string name="connect_needs_online">Connect to the internet once to refresh your access.</string>
+    <string name="connect_no_session">Log in to connect.</string>
+    <string name="connect_suspended">Your access is suspended. Contact your admin.</string>
+    <string name="login_no_account">No account?</string>
+    <string name="login_contact_admin">Contact your admin to get access.</string>
+
+    <string name="nav_account">Account</string>
+    <string name="local_mode">Local mode</string>
+    <string name="drawer_title_account">Account</string>
+    <string name="drawer_logout">Log out</string>
+
+    <string name="home_days_left">%1$d days left</string>
+    <string name="home_hours_left">%1$d h left</string>
+    <string name="home_expired">Expired</string>
+    <string name="home_config_version">Config v%1$d</string>
+
+    <string name="servers_managed_header">Servers managed by admin · Config v%1$d</string>
+    <string name="servers_managed_updated">Updated %1$s</string>
+    <string name="servers_managed_never">never</string>
+    <string name="servers_sync">Sync</string>
+    <string name="servers_empty_managed">No servers have been published yet. Tap Sync to check again.</string>
+    <string name="servers_synced">Config updated to v%1$d (%2$d servers)</string>
+    <string name="servers_sync_unchanged">Already up to date (v%1$d)</string>
+    <string name="servers_sync_failed">Sync failed: %1$s</string>
+
+    <string name="account_title">Account</string>
+    <string name="account_username">Username</string>
+    <string name="account_expires">Expires</string>
+    <string name="account_remaining">Remaining</string>
+    <string name="account_config_version">Config version</string>
+    <string name="account_traffic">Session traffic</string>
+    <string name="account_sync_now">Sync now</string>
+    <string name="account_logout">Log out</string>
+    <string name="account_offline_note">Last validated on this device</string>
+
+    <string name="expired_title">Access expired</string>
+    <string name="suspended_title">Access suspended</string>
+    <string name="suspended_body">Your access was suspended by the admin. Contact them to restore it.</string>
+    <string name="expired_body">Your access ended on %1$s. Contact your admin to renew it.</string>
+    <string name="expired_check">Check again</string>
+    <string name="expired_logout">Log out</string>
+    <string name="expired_checking">Checking…</string>
+    <string name="expired_check_failed">Could not reach the server. Try again.</string>
 </resources>
