@@ -15,6 +15,8 @@ class SessionGuardTest {
         expiresAt: Long = now + day,
         offset: Long = 0L,
         lastValidated: Long = now,
+        maxEffectiveSeen: Long = 0L,
+        suspended: Boolean = false,
     ) = SessionState(
         username = "akmal01",
         token = "t",
@@ -23,6 +25,8 @@ class SessionGuardTest {
         configVersion = 1,
         lastValidatedMs = lastValidated,
         lastSyncMs = now,
+        maxEffectiveSeenMs = maxEffectiveSeen,
+        suspended = suspended,
     )
 
     @Test
@@ -37,7 +41,6 @@ class SessionGuardTest {
 
     @Test
     fun `server offset pulls effective time forward even if device clock is rolled back`() {
-        // Server is 2 days ahead of the device, account expired yesterday in server time.
         val s = session(expiresAt = now + day, offset = 2 * day)
         assertTrue(SessionGuard.isExpired(s, now))
     }
@@ -84,5 +87,46 @@ class SessionGuardTest {
             SessionGuard.ConnectDecision.Revalidate,
             SessionGuard.connectDecision(s, now, graceMs = 0L),
         )
+    }
+
+    // ── Clock-rollback hardening (review finding C1) ──────────────────────
+
+    @Test
+    fun `effective time never travels back behind the highest server time seen`() {
+        // Server time reached now + 2 days before the device clock was rolled back.
+        val s = session(maxEffectiveSeen = now + 2 * day)
+        assertEquals(now + 2 * day, s.effectiveNow(now))
+    }
+
+    @Test
+    fun `expired account cannot be revived by rolling the device clock back`() {
+        // Last validated two days ago when server time was already past expiry.
+        val s = session(
+            expiresAt = now + day,
+            lastValidated = now - 2 * day,
+            maxEffectiveSeen = now + 2 * day,
+        )
+        assertTrue(SessionGuard.isExpired(s, now))
+        assertEquals(SessionGuard.ConnectDecision.DenyExpired, SessionGuard.connectDecision(s, now))
+    }
+
+    @Test
+    fun `a device clock rollback forces revalidation instead of trusting the grace`() {
+        // Device clock moved backwards: validation appears to be in the future.
+        val s = session(lastValidated = now + 2 * day)
+        assertEquals(SessionGuard.ConnectDecision.Revalidate, SessionGuard.connectDecision(s, now))
+    }
+
+    @Test
+    fun `suspended session is locked even when expiry is in the future`() {
+        val s = session(expiresAt = now + 30 * day, suspended = true)
+        assertFalse(SessionGuard.isExpired(s, now))
+        assertTrue(SessionGuard.isLocked(s, now))
+        assertEquals(SessionGuard.ConnectDecision.DenySuspended, SessionGuard.connectDecision(s, now))
+    }
+
+    @Test
+    fun `expired session is locked`() {
+        assertTrue(SessionGuard.isLocked(session(expiresAt = now), now))
     }
 }

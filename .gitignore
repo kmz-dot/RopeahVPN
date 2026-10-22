@@ -12,3 +12,6 @@ captures/
 !debug.keystore
 keystore.properties
 
+
+# Kotlin compiler scratch
+.kotlin/

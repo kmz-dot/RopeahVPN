@@ -83,18 +83,34 @@ data class ApiErrorBody(
     @SerialName("server_time") val serverTime: Long? = null,
 )
 
-/** Local, server-anchored login session. All expiry math uses [serverOffsetMs]. */
+/**
+ * Local, server-anchored login session.
+ *
+ * [serverOffsetMs] is the last observed (server time − device time). [maxEffectiveSeenMs]
+ * is a high-water mark of server time: effective time may never travel backwards, so
+ * rolling the device clock back cannot revive an expired account.
+ */
 data class SessionState(
     val username: String,
     val token: String,
     val expiresAtMs: Long,
     val serverOffsetMs: Long,
+    /** Last version the server told us about; used as the ping body's config_version. */
     val configVersion: Int,
     val lastValidatedMs: Long,
     val lastSyncMs: Long,
+    val maxEffectiveSeenMs: Long = 0L,
+    /** Last version actually pushed into ServerRepository. 0 = nothing applied yet. */
+    val appliedConfigVersion: Int = 0,
+    /** Backend reported the account as suspended/revoked (403 with a future expiry). */
+    val suspended: Boolean = false,
 ) {
-    /** Server time computed from the device clock plus the stored offset. */
-    fun effectiveNow(deviceNowMs: Long): Long = deviceNowMs + serverOffsetMs
+    /**
+     * Effective server time. Monotonic within a session: it can lag a rolled-forward
+     * device clock but never falls behind the highest server time already observed.
+     */
+    fun effectiveNow(deviceNowMs: Long): Long =
+        maxOf(deviceNowMs + serverOffsetMs, maxEffectiveSeenMs)
 
     fun remainingMs(deviceNowMs: Long): Long = expiresAtMs - effectiveNow(deviceNowMs)
 }

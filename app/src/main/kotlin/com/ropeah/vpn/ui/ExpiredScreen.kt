@@ -38,6 +38,8 @@ import java.util.Locale
 fun ExpiredScreen(
     session: SessionState,
     checking: Boolean,
+    suspended: Boolean = false,
+    message: String? = null,
     onCheckAgain: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -67,14 +69,17 @@ fun ExpiredScreen(
 
         Spacer(Modifier.height(22.dp))
         Text(
-            text = stringResource(R.string.expired_title),
+            text = stringResource(
+                if (suspended) R.string.suspended_title else R.string.expired_title
+            ),
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            text = stringResource(R.string.expired_body, expiredLabel),
+            text = if (suspended) stringResource(R.string.suspended_body)
+            else stringResource(R.string.expired_body, expiredLabel),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -103,6 +108,15 @@ fun ExpiredScreen(
                     fontWeight = FontWeight.SemiBold,
                 )
             }
+        }
+        if (message != null) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
         }
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onLogout, enabled = !checking) {

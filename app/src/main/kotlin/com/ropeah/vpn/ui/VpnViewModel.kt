@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ropeah.vpn.BuildConfig
 import com.ropeah.vpn.R
 import com.ropeah.vpn.data.ApiClient
 import com.ropeah.vpn.data.ApiException
@@ -170,18 +171,36 @@ class VpnViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun startVpn(context: Context) {
         viewModelScope.launch {
+            if (!BuildConfig.MANAGED_MODE) {
+                launchService(context)
+                return@launch
+            }
             val app = getApplication<Application>()
             val session = sessionRepo.readOnce()
             when (SessionGuard.connectDecision(session, System.currentTimeMillis())) {
                 SessionGuard.ConnectDecision.Allow -> launchService(context)
                 SessionGuard.ConnectDecision.Revalidate -> {
                     val ok = session != null && revalidate(session)
-                    if (ok) launchService(context)
-                    else _connectBlocked.value = app.getString(R.string.connect_needs_online)
+                    if (ok) {
+                        launchService(context)
+                    } else {
+                        val current = sessionRepo.readOnce()
+                        _connectBlocked.value = when {
+                            current == null -> app.getString(R.string.connect_no_session)
+                            current.suspended -> app.getString(R.string.connect_suspended)
+                            SessionGuard.isExpired(current, System.currentTimeMillis()) ->
+                                app.getString(R.string.connect_expired)
+                            else -> app.getString(R.string.connect_needs_online)
+                        }
+                    }
                 }
                 SessionGuard.ConnectDecision.DenyExpired -> {
                     stopVpn(context)
                     _connectBlocked.value = app.getString(R.string.connect_expired)
+                }
+                SessionGuard.ConnectDecision.DenySuspended -> {
+                    stopVpn(context)
+                    _connectBlocked.value = app.getString(R.string.connect_suspended)
                 }
                 SessionGuard.ConnectDecision.DenyNoSession -> {
                     _connectBlocked.value = app.getString(R.string.connect_no_session)
@@ -217,21 +236,26 @@ class VpnViewModel(app: Application) : AndroidViewModel(app) {
                     expiresAt = response.expiresAt,
                     configVersion = response.configVersion,
                     deviceNow = deviceNow,
+                    expectedToken = session.token,
                 )
-                !SessionGuard.isExpired(sessionRepo.readOnce(), deviceNow)
+                !SessionGuard.isLocked(sessionRepo.readOnce(), deviceNow)
             }
         } catch (e: ApiException.Unauthorized) {
             sessionRepo.clear()
             false
         } catch (e: ApiException.Forbidden) {
             val serverTime = e.serverTime
+            val expiresAt = e.expiresAt
             if (serverTime != null) {
-                sessionRepo.updateFromServer(
+                sessionRepo.applyServerClock(
                     serverTime = serverTime,
-                    expiresAt = e.expiresAt,
-                    configVersion = null,
+                    expiresAt = expiresAt,
                     deviceNow = deviceNow,
+                    expectedToken = session.token,
+                    suspended = expiresAt == null || expiresAt > serverTime,
                 )
+            } else {
+                sessionRepo.markSuspended(session.token)
             }
             false
         } catch (e: ApiException) {

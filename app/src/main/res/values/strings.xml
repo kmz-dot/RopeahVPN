@@ -111,10 +111,12 @@
     <string name="connect_expired">Your access has expired. Contact your admin.</string>
     <string name="connect_needs_online">Connect to the internet once to refresh your access.</string>
     <string name="connect_no_session">Log in to connect.</string>
+    <string name="connect_suspended">Your access is suspended. Contact your admin.</string>
     <string name="login_no_account">No account?</string>
     <string name="login_contact_admin">Contact your admin to get access.</string>
 
     <string name="nav_account">Account</string>
+    <string name="local_mode">Local mode</string>
     <string name="drawer_title_account">Account</string>
     <string name="drawer_logout">Log out</string>
 
@@ -143,6 +145,8 @@
     <string name="account_offline_note">Last validated on this device</string>
 
     <string name="expired_title">Access expired</string>
+    <string name="suspended_title">Access suspended</string>
+    <string name="suspended_body">Your access was suspended by the admin. Contact them to restore it.</string>
     <string name="expired_body">Your access ended on %1$s. Contact your admin to renew it.</string>
     <string name="expired_check">Check again</string>
     <string name="expired_logout">Log out</string>

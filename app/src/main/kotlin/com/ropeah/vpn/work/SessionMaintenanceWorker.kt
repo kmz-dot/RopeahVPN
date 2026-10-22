@@ -49,18 +49,34 @@ class SessionMaintenanceWorker(
                 expiresAt = response.expiresAt,
                 configVersion = response.configVersion,
                 deviceNow = deviceNow,
+                expectedToken = session.token,
             )
         } catch (e: ApiException.Unauthorized) {
             sessionRepo.clear()
             return Result.success()
         } catch (e: ApiException.Forbidden) {
             val serverTime = e.serverTime
+            val expiresAt = e.expiresAt
             if (serverTime != null) {
-                sessionRepo.updateFromServer(serverTime, e.expiresAt, null, deviceNow)
+                // Denial path: record clock/expiry without re-arming the grace window.
+                sessionRepo.applyServerClock(
+                    serverTime = serverTime,
+                    expiresAt = expiresAt,
+                    deviceNow = deviceNow,
+                    expectedToken = session.token,
+                    suspended = expiresAt == null || expiresAt > serverTime,
+                )
+            } else {
+                sessionRepo.markSuspended(session.token)
             }
             return Result.success()
-        } catch (e: ApiException) {
+        } catch (e: ApiException.Network) {
             return Result.retry()
+        } catch (e: ApiException.Http) {
+            // Retry server errors; other 4xx will not heal by themselves.
+            return if (e.code >= 500) Result.retry() else Result.success()
+        } catch (e: ApiException) {
+            return Result.success()
         }
 
         val refreshed = sessionRepo.readOnce() ?: return Result.success()

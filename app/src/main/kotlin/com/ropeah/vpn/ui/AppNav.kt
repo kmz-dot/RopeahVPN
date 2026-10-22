@@ -98,23 +98,30 @@ fun AppNav() {
         }
     }
 
-    val expired = session != null && SessionGuard.isExpired(session, nowMs)
+    val locked = session != null && SessionGuard.isLocked(session, nowMs)
 
-    LaunchedEffect(expired) {
-        if (expired) sessionViewModel.stopVpn()
+    LaunchedEffect(locked) {
+        if (locked) sessionViewModel.stopVpn()
     }
 
     when {
         !ready -> LoadingGate()
-        session == null -> LoginScreen(viewModel = sessionViewModel)
-        expired -> ExpiredScreen(
-            session = session!!,
-            checking = checkingAccess,
-            onCheckAgain = { sessionViewModel.revalidateNow() },
-            onLogout = { sessionViewModel.logout() },
-        )
+        // The login gate is part of managed mode; a local-only build keeps the
+        // original server-management flow instead of a dead-end login screen.
+        session == null && BuildConfig.MANAGED_MODE -> LoginScreen(viewModel = sessionViewModel)
+        locked -> {
+            val lockMessage by sessionViewModel.syncMessage.collectAsStateWithLifecycle()
+            ExpiredScreen(
+                session = session!!,
+                checking = checkingAccess,
+                suspended = session?.suspended == true,
+                message = lockMessage,
+                onCheckAgain = { sessionViewModel.revalidateNow() },
+                onLogout = { sessionViewModel.logout() },
+            )
+        }
         else -> MainScaffold(
-            session = session!!,
+            session = session,
             sessionViewModel = sessionViewModel,
         )
     }
@@ -130,7 +137,7 @@ private fun LoadingGate() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScaffold(
-    session: SessionState,
+    session: SessionState?,
     sessionViewModel: SessionViewModel,
 ) {
     val nav = rememberNavController()
@@ -151,7 +158,12 @@ private fun MainScaffold(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val isMainTab = onRoute in listOf(Tab.Home.route, Tab.Servers.route, Tab.Account.route)
+    val tabs = if (session != null) {
+        listOf(Tab.Home, Tab.Servers, Tab.Account)
+    } else {
+        listOf(Tab.Home, Tab.Servers)
+    }
+    val isMainTab = onRoute in tabs.map { it.route }
 
     fun navigateTo(route: String) {
         nav.navigate(route) {
@@ -183,7 +195,7 @@ private fun MainScaffold(
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            text = session.username,
+                            text = session?.username ?: stringResource(R.string.local_mode),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -208,15 +220,17 @@ private fun MainScaffold(
                         scope.launch { drawerState.close() }
                     },
                 )
-                DrawerItem(
-                    icon = Icons.Filled.Person,
-                    label = stringResource(R.string.nav_account),
-                    selected = onRoute == Tab.Account.route,
-                    onClick = {
-                        navigateTo(Tab.Account.route)
-                        scope.launch { drawerState.close() }
-                    },
-                )
+                if (session != null) {
+                    DrawerItem(
+                        icon = Icons.Filled.Person,
+                        label = stringResource(R.string.nav_account),
+                        selected = onRoute == Tab.Account.route,
+                        onClick = {
+                            navigateTo(Tab.Account.route)
+                            scope.launch { drawerState.close() }
+                        },
+                    )
+                }
                 if (!BuildConfig.MANAGED_MODE) {
                     DrawerItem(
                         icon = Icons.Filled.Cloud,
@@ -244,15 +258,17 @@ private fun MainScaffold(
                     },
                 )
                 Spacer(Modifier.weight(1f))
-                DrawerItem(
-                    icon = Icons.AutoMirrored.Filled.Logout,
-                    label = stringResource(R.string.drawer_logout),
-                    selected = false,
-                    onClick = {
-                        scope.launch { drawerState.close() }
-                        sessionViewModel.logout()
-                    },
-                )
+                if (session != null) {
+                    DrawerItem(
+                        icon = Icons.AutoMirrored.Filled.Logout,
+                        label = stringResource(R.string.drawer_logout),
+                        selected = false,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            sessionViewModel.logout()
+                        },
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
             }
         },
@@ -298,7 +314,7 @@ private fun MainScaffold(
             bottomBar = {
                 if (isMainTab) {
                     NavigationBar {
-                        listOf(Tab.Home, Tab.Servers, Tab.Account).forEach { tab ->
+                        tabs.forEach { tab ->
                             val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
                             NavigationBarItem(
                                 selected = selected,
@@ -322,7 +338,9 @@ private fun MainScaffold(
                     HomeScreen(
                         session = session,
                         onSelectServer = { navigateTo(Tab.Servers.route) },
-                        onOpenAccount = { navigateTo(Tab.Account.route) },
+                        onOpenAccount = {
+                            if (session != null) navigateTo(Tab.Account.route)
+                        },
                     )
                 }
                 composable(Tab.Servers.route) {
@@ -333,11 +351,16 @@ private fun MainScaffold(
                         onSync = { sessionViewModel.syncNow() },
                     )
                 }
-                composable(Tab.Account.route) {
-                    AccountScreen(
-                        session = session,
-                        onLogout = { sessionViewModel.logout() },
-                    )
+                if (session != null) {
+                    composable(Tab.Account.route) {
+                        AccountScreen(
+                            session = session,
+                            onLogout = { sessionViewModel.logout() },
+                            syncing = syncing,
+                            syncMessage = syncMessage,
+                            onSync = { sessionViewModel.syncNow() },
+                        )
+                    }
                 }
                 composable(ROUTE_SETTINGS) {
                     SettingsScreen()

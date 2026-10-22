@@ -15,6 +15,7 @@ import com.ropeah.vpn.data.SessionState
 import com.ropeah.vpn.data.SyncResult
 import com.ropeah.vpn.vpn.RopeahVpnService
 import com.ropeah.vpn.work.SessionMaintenanceWorker
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -59,7 +60,13 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     private val _checkingAccess = MutableStateFlow(false)
     val checkingAccess: StateFlow<Boolean> = _checkingAccess
 
-    /** Manual "check again" from the expired lock screen: ping, then update expiry. */
+    init {
+        viewModelScope.launch {
+            sessionRepo.session.collect { _ready.value = true }
+        }
+    }
+
+    /** Manual "check again" from the lock screen: ping, then refresh expiry/status. */
     fun revalidateNow() {
         viewModelScope.launch {
             if (_checkingAccess.value) return@launch
@@ -79,27 +86,23 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
                         expiresAt = response.expiresAt,
                         configVersion = response.configVersion,
                         deviceNow = deviceNow,
+                        expectedToken = current.token,
                     )
                 }
             } catch (e: ApiException.Unauthorized) {
                 sessionExpiredLocally()
             } catch (e: ApiException.Forbidden) {
-                val serverTime = e.serverTime
-                if (serverTime != null) {
-                    sessionRepo.updateFromServer(serverTime, e.expiresAt, null, deviceNow)
-                }
+                handleDenial(e, current.token, deviceNow)
             } catch (e: ApiException) {
                 _syncMessage.value =
                     getApplication<Application>().getString(R.string.expired_check_failed)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _syncMessage.value = e.message ?: "Check failed"
             } finally {
                 _checkingAccess.value = false
             }
-        }
-    }
-
-    init {
-        viewModelScope.launch {
-            sessionRepo.session.collect { _ready.value = true }
         }
     }
 
@@ -107,7 +110,9 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         if (_loginState.value.loading) return
         val name = username.trim()
         if (name.isEmpty()) {
-            _loginState.value = LoginUiState(error = getApplication<Application>().getString(R.string.login_username_required))
+            _loginState.value = LoginUiState(
+                error = getApplication<Application>().getString(R.string.login_username_required)
+            )
             return
         }
 
@@ -124,6 +129,9 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
                     configVersion = response.configVersion,
                     lastValidatedMs = deviceNow,
                     lastSyncMs = 0L,
+                    maxEffectiveSeenMs = response.serverTime,
+                    // Nothing is stored yet: the first sync must always apply.
+                    appliedConfigVersion = 0,
                 )
                 sessionRepo.save(state)
                 SessionMaintenanceWorker.enqueue(getApplication())
@@ -136,6 +144,10 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
                     expiredAtMs = e.expiresAt,
                 )
             } catch (e: ApiException) {
+                _loginState.value = LoginUiState(error = e.message ?: "Login failed")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 _loginState.value = LoginUiState(error = e.message ?: "Login failed")
             }
         }
@@ -157,7 +169,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val current = sessionRepo.readOnce() ?: return@launch
             val age = System.currentTimeMillis() - current.lastSyncMs
-            if (current.configVersion > 0 && age in 0 until maxAgeMs) return@launch
+            if (current.appliedConfigVersion > 0 && age in 0 until maxAgeMs) return@launch
             runSync(current, force = false)
         }
     }
@@ -175,10 +187,38 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
             is SyncResult.Failed ->
                 getApplication<Application>().getString(R.string.servers_sync_failed, result.message)
         }
-        if (result is SyncResult.Failed && result.exception is ApiException.Unauthorized) {
-            sessionExpiredLocally()
+        when (val failure = (result as? SyncResult.Failed)?.exception) {
+            is ApiException.Unauthorized -> sessionExpiredLocally()
+            is ApiException.Forbidden -> handleDenial(failure, session.token, System.currentTimeMillis())
+            else -> Unit
         }
         _syncing.value = false
+    }
+
+    /**
+     * 403: the backend refused access. Record its clock/expiry without touching
+     * lastValidated (that would re-arm the offline grace window), and mark the
+     * account suspended when the expiry itself is still in the future.
+     */
+    private suspend fun handleDenial(
+        exception: ApiException.Forbidden,
+        token: String,
+        deviceNow: Long,
+    ) {
+        val serverTime = exception.serverTime
+        val expiresAt = exception.expiresAt
+        if (serverTime != null) {
+            sessionRepo.applyServerClock(
+                serverTime = serverTime,
+                expiresAt = expiresAt,
+                deviceNow = deviceNow,
+                expectedToken = token,
+                suspended = expiresAt == null || expiresAt > serverTime,
+            )
+        } else {
+            sessionRepo.markSuspended(token)
+        }
+        stopVpn()
     }
 
     /** 401 on any endpoint means the session is dead: drop the tunnel and lock. */

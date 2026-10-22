@@ -6,6 +6,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.ropeah.vpn.BuildConfig
 import com.ropeah.vpn.data.ApiClient
 import com.ropeah.vpn.data.ApiException
 import com.ropeah.vpn.data.AppSettings
@@ -74,11 +75,13 @@ class RopeahVpnService : VpnService() {
 
             // Defence in depth: a sticky restart must not resurrect an expired
             // or logged-out session even though the UI gate already checked.
-            val session = sessionRepo.readOnce()
-            if (session == null || SessionGuard.isExpired(session, System.currentTimeMillis())) {
-                Log.w(TAG, "session missing or expired; refusing to connect")
-                stopSelfSafely()
-                return@launch
+            if (BuildConfig.MANAGED_MODE) {
+                val session = sessionRepo.readOnce()
+                if (SessionGuard.isLocked(session, System.currentTimeMillis())) {
+                    Log.w(TAG, "session missing, expired or suspended; refusing to connect")
+                    stopSelfSafely()
+                    return@launch
+                }
             }
             if (server == null) {
                 Log.w(TAG, "no active server; refusing to connect")
@@ -164,19 +167,19 @@ class RopeahVpnService : VpnService() {
                 lastNotifAt = now
             }
 
-            // Local expiry check while connected (~every 30 s).
-            if (now - lastExpiryCheckAt >= EXPIRY_CHECK_INTERVAL_MS) {
+            // Local expiry/suspension check while connected (~every 30 s).
+            if (BuildConfig.MANAGED_MODE && now - lastExpiryCheckAt >= EXPIRY_CHECK_INTERVAL_MS) {
                 lastExpiryCheckAt = now
                 val session = sessionRepo.readOnce()
-                if (SessionGuard.isExpired(session, now)) {
-                    Log.w(TAG, "session expired mid-session; dropping tunnel")
+                if (SessionGuard.isLocked(session, now)) {
+                    Log.w(TAG, "session expired or suspended mid-session; dropping tunnel")
                     stopVpn()
                     return@launch
                 }
             }
 
             // Heartbeat every 60 s: traffic deltas, live extension, revoke.
-            if (now - lastPingAt >= PING_INTERVAL_MS) {
+            if (BuildConfig.MANAGED_MODE && now - lastPingAt >= PING_INTERVAL_MS) {
                 lastPingAt = now
                 val session = sessionRepo.readOnce()
                 if (session == null) {
@@ -209,6 +212,7 @@ class RopeahVpnService : VpnService() {
                         expiresAt = response.expiresAt,
                         configVersion = response.configVersion,
                         deviceNow = now,
+                        expectedToken = session.token,
                     )
                 } catch (e: ApiException.Unauthorized) {
                     Log.w(TAG, "heartbeat 401; clearing session")
@@ -218,8 +222,19 @@ class RopeahVpnService : VpnService() {
                 } catch (e: ApiException.Forbidden) {
                     Log.w(TAG, "heartbeat 403: ${e.message}")
                     val serverTime = e.serverTime
+                    val expiresAt = e.expiresAt
                     if (serverTime != null) {
-                        sessionRepo.updateFromServer(serverTime, e.expiresAt, null, now)
+                        // Denial path: record the clock/expiry but never bump
+                        // lastValidated, or the offline grace would re-arm.
+                        sessionRepo.applyServerClock(
+                            serverTime = serverTime,
+                            expiresAt = expiresAt,
+                            deviceNow = now,
+                            expectedToken = session.token,
+                            suspended = expiresAt == null || expiresAt > serverTime,
+                        )
+                    } else {
+                        sessionRepo.markSuspended(session.token)
                     }
                     stopVpn()
                     return@launch
