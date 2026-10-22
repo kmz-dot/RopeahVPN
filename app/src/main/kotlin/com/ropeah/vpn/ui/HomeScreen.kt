@@ -46,12 +46,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ropeah.vpn.BuildConfig
 import com.ropeah.vpn.R
 import com.ropeah.vpn.data.Protocol
 import com.ropeah.vpn.data.ServerConfig
+import com.ropeah.vpn.data.ServerGeoCache
+import com.ropeah.vpn.data.ServerLocation
 import com.ropeah.vpn.data.SessionState
 import com.ropeah.vpn.data.countryLocation
 import com.ropeah.vpn.ui.neo.ConnectOrb
@@ -91,8 +94,18 @@ fun HomeScreen(
     val traffic by viewModel.traffic.collectAsStateWithLifecycle()
     val connectedSince by viewModel.connectedSince.collectAsStateWithLifecycle()
     val connectBlocked by viewModel.connectBlocked.collectAsStateWithLifecycle()
+    val geoLocations by ServerGeoCache.locations.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
+
+    val baseLocation = remember(server?.id, server?.countryCode, server?.countryName, server?.flag, server?.name) {
+        server?.countryLocation()
+    }
+    LaunchedEffect(server?.address, baseLocation) {
+        val current = server
+        if (current != null && baseLocation == null) ServerGeoCache.request(current.address)
+    }
+    val serverLocation = baseLocation ?: server?.let { geoLocations[it.address] }
 
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -191,6 +204,7 @@ fun HomeScreen(
 
         ServerPanel(
             server = server,
+            location = serverLocation,
             status = status,
             latencyMs = traffic?.latencyMs,
             onClick = onSelectServer,
@@ -219,13 +233,11 @@ fun HomeScreen(
 @Composable
 private fun ServerPanel(
     server: ServerConfig?,
+    location: ServerLocation?,
     status: VpnStatus,
     latencyMs: Long?,
     onClick: () -> Unit,
 ) {
-    val location = remember(server?.id, server?.countryCode, server?.countryName, server?.flag, server?.name) {
-        server?.countryLocation()
-    }
     val serverMeta = server?.let { current ->
         buildString {
             if (location != null) {
@@ -261,6 +273,12 @@ private fun ServerPanel(
                         contentDescription = null,
                         tint = NeoTextSecondary,
                         modifier = Modifier.size(20.dp),
+                    )
+                } else if (!location?.flag.isNullOrBlank()) {
+                    Text(
+                        text = location.flag,
+                        fontSize = 22.sp,
+                        lineHeight = 24.sp,
                     )
                 } else {
                     Text(

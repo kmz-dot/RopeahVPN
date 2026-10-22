@@ -100,6 +100,8 @@ import com.ropeah.vpn.BuildConfig
 import com.ropeah.vpn.R
 import com.ropeah.vpn.data.Protocol
 import com.ropeah.vpn.data.ServerConfig
+import com.ropeah.vpn.data.ServerGeoCache
+import com.ropeah.vpn.data.ServerLocation
 import com.ropeah.vpn.data.countryLocation
 import com.ropeah.vpn.ui.neo.GlassBorderGradient
 import com.ropeah.vpn.ui.neo.GlassCard
@@ -134,6 +136,7 @@ fun ServerListScreen(
     val status by viewModel.status.collectAsStateWithLifecycle()
     val latencyMap by viewModel.latencyMap.collectAsStateWithLifecycle()
     val pinging by viewModel.pinging.collectAsStateWithLifecycle()
+    val geoLocations by ServerGeoCache.locations.collectAsStateWithLifecycle()
     val managed = BuildConfig.MANAGED_MODE
     var addOpen by remember { mutableStateOf(false) }
     var contextTarget by remember { mutableStateOf<ServerConfig?>(null) }
@@ -233,8 +236,22 @@ fun ServerListScreen(
                     val isActive = server.id == active?.id
                     val latencyMs = latencyMap[server.id]
                     val isPinging = pinging.contains(server.id)
+                    val baseLocation = remember(
+                        server.id,
+                        server.countryCode,
+                        server.countryName,
+                        server.flag,
+                        server.name,
+                    ) {
+                        server.countryLocation()
+                    }
+                    val location = baseLocation ?: geoLocations[server.address]
+                    LaunchedEffect(server.address, baseLocation) {
+                        if (baseLocation == null) ServerGeoCache.request(server.address)
+                    }
                     ServerCard(
                         server = server,
+                        location = location,
                         isActive = isActive,
                         isConnected = isActive && status == VpnStatus.Connected,
                         isConnecting = isActive && status == VpnStatus.Connecting,
@@ -397,6 +414,7 @@ private fun ManagedHeader(
 @Composable
 private fun ServerCard(
     server: ServerConfig,
+    location: ServerLocation?,
     isActive: Boolean,
     isConnected: Boolean,
     isConnecting: Boolean,
@@ -406,9 +424,6 @@ private fun ServerCard(
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
-    val location = remember(server.id, server.countryCode, server.countryName, server.flag, server.name) {
-        server.countryLocation()
-    }
     val meta = buildString {
         if (location != null) {
             location.flag?.takeIf { it.isNotBlank() }?.let { append(it).append(' ') }
@@ -431,6 +446,7 @@ private fun ServerCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             ProtocolAvatar(
                 protocol = server.protocol,
+                flag = location?.flag,
                 active = isActive,
             )
             Spacer(Modifier.width(12.dp))
@@ -498,7 +514,7 @@ private fun ServerCard(
 }
 
 @Composable
-private fun ProtocolAvatar(protocol: Protocol, active: Boolean) {
+private fun ProtocolAvatar(protocol: Protocol, flag: String?, active: Boolean) {
     Box(
         modifier = Modifier
             .size(44.dp)
@@ -511,11 +527,19 @@ private fun ProtocolAvatar(protocol: Protocol, active: Boolean) {
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = protocolInitial(protocol),
-            style = MaterialTheme.typography.titleMedium,
-            color = if (active) NeoTeal else NeoTextSecondary,
-        )
+        if (!flag.isNullOrBlank()) {
+            Text(
+                text = flag,
+                fontSize = 22.sp,
+                lineHeight = 24.sp,
+            )
+        } else {
+            Text(
+                text = protocolInitial(protocol),
+                style = MaterialTheme.typography.titleMedium,
+                color = if (active) NeoTeal else NeoTextSecondary,
+            )
+        }
     }
 }
 
