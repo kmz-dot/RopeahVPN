@@ -23,6 +23,11 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        // Managed VPN backend. Override per build type if a staging backend is needed.
+        buildConfigField("String", "ADMIN_API_BASE_URL", "\"https://vpn.kmztech.my\"")
+        // Managed mode: server list is admin-pushed and read-only in the UI.
+        buildConfigField("boolean", "MANAGED_MODE", "true")
     }
 
     sourceSets {
@@ -118,6 +123,12 @@ dependencies {
     // QR scanner for the server import flow.
     implementation(libs.zxing.android.embedded)
 
+    // Backend API + background maintenance.
+    implementation(libs.okhttp)
+    implementation(libs.androidx.work.runtime.ktx)
+
     // Xray-core via gomobile-built AAR. Build instructions in app/libs/README.md.
     implementation(files("libs/libv2ray.aar"))
+
+    testImplementation(libs.junit)
 }
