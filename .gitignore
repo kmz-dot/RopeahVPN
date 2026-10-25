@@ -15,3 +15,6 @@ keystore.properties
 
 # Kotlin compiler scratch
 .kotlin/
+
+# Release signing secrets (never commit)
+keystore/

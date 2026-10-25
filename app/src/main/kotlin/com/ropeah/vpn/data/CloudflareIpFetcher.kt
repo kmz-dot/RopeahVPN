@@ -44,7 +44,7 @@ object CloudflareIpFetcher {
         val conn = URL(urlString).openConnection() as HttpURLConnection
         conn.connectTimeout = 10_000
         conn.readTimeout = 10_000
-        conn.setRequestProperty("User-Agent", "RopeahVPN/1.0")
+        conn.setRequestProperty("User-Agent", "v2eon/1.0")
         return try {
             conn.inputStream.bufferedReader().use { it.readText() }
         } catch (e: Exception) {

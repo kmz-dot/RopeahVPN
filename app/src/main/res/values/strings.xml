@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">RopeahVPN</string>
+    <string name="app_name">v2eon</string>
 
     <string name="status_disconnected">Disconnected</string>
     <string name="status_connecting">Connecting…</string>
@@ -96,8 +96,8 @@
     <string name="server_share_chooser">Share server URI</string>
 
     <string name="notif_channel_vpn">VPN status</string>
-    <string name="notif_channel_vpn_desc">Shown while RopeahVPN is connected.</string>
-    <string name="notif_title_connected">RopeahVPN connected</string>
+    <string name="notif_channel_vpn_desc">Shown while v2eon is connected.</string>
+    <string name="notif_title_connected">v2eon connected</string>
     <string name="notif_text_connected">Routing traffic through %1$s</string>
     <string name="notif_text_connected_detail">%1$s · %2$s · %3$s</string>
     <string name="notif_latency_unknown">— ms</string>
@@ -141,9 +141,10 @@
 
     <string name="settings_section_about">About</string>
     <string name="settings_version">Version</string>
+    <string name="settings_built_by">Built by Kemalz</string>
 
     <!-- Managed session -->
-    <string name="login_title">V2EON</string>
+    <string name="login_title">v2eon</string>
     <string name="login_subtitle">Enter the account your admin created for you.</string>
     <string name="login_username">Username</string>
     <string name="login_username_required">Enter your username</string>

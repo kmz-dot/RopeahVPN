@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.SignalCellularAlt
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.DropdownMenu
@@ -225,6 +226,12 @@ fun SettingsScreen(
             icon = Icons.Filled.Info,
             title = stringResource(R.string.settings_version),
             subtitle = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+        )
+
+        AboutRow(
+            icon = Icons.Filled.Star,
+            title = stringResource(R.string.settings_built_by),
+            subtitle = "Kemalz",
         )
 
         if (onOpenCloudflareScan != null) {

@@ -1,5 +1,6 @@
 package com.ropeah.vpn.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -37,7 +39,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -49,11 +53,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ropeah.vpn.R
 import com.ropeah.vpn.ui.neo.GlassCard
 import com.ropeah.vpn.ui.neo.MicroLabel
-import com.ropeah.vpn.ui.neo.NeoLogoMark
 import com.ropeah.vpn.ui.neo.NeoPrimaryButton
 import com.ropeah.vpn.ui.neo.NeoTextField
-import com.ropeah.vpn.ui.neo.NeonGradient
-import com.ropeah.vpn.ui.neo.neonBorderGradient
 import com.ropeah.vpn.ui.theme.NeoRed
 import com.ropeah.vpn.ui.theme.NeoTeal
 import com.ropeah.vpn.ui.theme.NeoTextPrimary
@@ -85,30 +86,23 @@ fun LoginScreen(viewModel: SessionViewModel = viewModel()) {
             .padding(top = 52.dp, bottom = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
+        Image(
+            painter = painterResource(R.drawable.v2eon_full_logo),
+            contentDescription = stringResource(R.string.app_name),
             modifier = Modifier
-                .size(96.dp)
+                .fillMaxWidth()
+                .aspectRatio(3f / 2f)
                 .shadow(
-                    elevation = 30.dp,
-                    shape = CircleShape,
-                    ambientColor = NeoTeal.copy(alpha = 0.45f),
-                    spotColor = NeoTeal.copy(alpha = 0.35f),
+                    elevation = 24.dp,
+                    shape = RoundedCornerShape(20.dp),
+                    ambientColor = NeoTeal.copy(alpha = 0.35f),
+                    spotColor = NeoTeal.copy(alpha = 0.25f),
                 )
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.045f))
-                .border(1.dp, neonBorderGradient(0.42f), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            NeoLogoMark(size = 66.dp)
-        }
-
-        Spacer(Modifier.height(24.dp))
-        Text(
-            text = "V2EON",
-            style = MaterialTheme.typography.displayMedium.copy(brush = NeonGradient),
-            letterSpacing = 2.sp,
+                .clip(RoundedCornerShape(20.dp)),
+            contentScale = ContentScale.Fit,
         )
-        Spacer(Modifier.height(5.dp))
+
+        Spacer(Modifier.height(22.dp))
         MicroLabel(
             text = stringResource(R.string.neo_access_terminal),
             color = NeoTextSecondary,

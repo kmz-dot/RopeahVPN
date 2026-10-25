@@ -18,11 +18,11 @@ android {
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
-        applicationId = "com.ropeah.vpn"
+        applicationId = "com.v2eon.app"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
 
         // Managed VPN backend. Override per build type if a staging backend is needed.
         buildConfigField("String", "ADMIN_API_BASE_URL", "\"https://vpn.kmztech.my\"")
