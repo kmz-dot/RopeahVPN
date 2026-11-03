@@ -10,6 +10,7 @@ import com.ropeah.vpn.data.ApiException
 import com.ropeah.vpn.data.ConfigSync
 import com.ropeah.vpn.data.PingRequest
 import com.ropeah.vpn.data.ServerRepository
+import com.ropeah.vpn.data.SessionGuard
 import com.ropeah.vpn.data.SessionRepository
 import com.ropeah.vpn.data.SessionState
 import com.ropeah.vpn.data.SyncResult
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -64,6 +66,54 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             sessionRepo.session.collect { _ready.value = true }
         }
+        // Kickout on launch: a deleted or expired account must not survive
+        // an app restart on a stale local session. One silent ping; only a
+        // backend denial clears the session, a network failure leaves it
+        // alone so offline use still works.
+        viewModelScope.launch {
+            val current = sessionRepo.session.first()
+            if (current == null) return@launch
+            if (SessionGuard.isExpired(current, System.currentTimeMillis())) return@launch // AppNav kicks it out
+            val deviceNow = System.currentTimeMillis()
+            try {
+                val response = api.ping(
+                    token = current.token,
+                    body = PingRequest(configVersion = current.configVersion, connected = false),
+                    quick = true,
+                )
+                if (response.revoked) {
+                    sessionExpiredLocally()
+                } else {
+                    sessionRepo.updateFromServer(
+                        serverTime = response.serverTime ?: (deviceNow + current.serverOffsetMs),
+                        expiresAt = response.expiresAt,
+                        configVersion = response.configVersion,
+                        deviceNow = deviceNow,
+                        expectedToken = current.token,
+                    )
+                }
+            } catch (e: ApiException.Unauthorized) {
+                sessionExpiredLocally()
+            } catch (e: ApiException.Forbidden) {
+                val serverTime = e.serverTime
+                val expiresAt = e.expiresAt
+                if (serverTime != null && expiresAt != null && expiresAt <= serverTime) {
+                    sessionExpiredLocally() // expired -> login page, not lock screen
+                } else if (serverTime != null) {
+                    sessionRepo.applyServerClock(
+                        serverTime = serverTime,
+                        expiresAt = expiresAt,
+                        deviceNow = deviceNow,
+                        expectedToken = current.token,
+                        suspended = expiresAt == null || expiresAt > serverTime,
+                    )
+                } else {
+                    sessionRepo.markSuspended(current.token)
+                }
+            } catch (e: ApiException) {
+                // Network or transient failure: leave the session alone.
+            }
+        }
     }
 
     /** Manual "check again" from the lock screen: ping, then refresh expiry/status. */
@@ -77,6 +127,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
                 val response = api.ping(
                     token = current.token,
                     body = PingRequest(configVersion = current.configVersion, connected = false),
+                    quick = true,
                 )
                 if (response.revoked) {
                     sessionExpiredLocally()
