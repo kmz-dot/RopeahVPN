@@ -178,9 +178,28 @@ class VpnViewModel(app: Application) : AndroidViewModel(app) {
             val app = getApplication<Application>()
             val session = sessionRepo.readOnce()
             when (SessionGuard.connectDecision(session, System.currentTimeMillis())) {
-                SessionGuard.ConnectDecision.Allow -> launchService(context)
+                // Strict kickout: even a fresh session must prove itself when
+                // the backend is reachable. Only a genuine network failure
+                // falls back to the offline grace window, so a deleted or
+                // expired account can never start a tunnel while online.
+                SessionGuard.ConnectDecision.Allow -> {
+                    when (session?.let { revalidate(it) }) {
+                        true -> launchService(context)
+                        null -> launchService(context) // offline: grace applies
+                        else -> {
+                            val current = sessionRepo.readOnce()
+                            _connectBlocked.value = when {
+                                current == null -> app.getString(R.string.connect_no_session)
+                                current.suspended -> app.getString(R.string.connect_suspended)
+                                SessionGuard.isExpired(current, System.currentTimeMillis()) ->
+                                    app.getString(R.string.connect_expired)
+                                else -> app.getString(R.string.connect_needs_online)
+                            }
+                        }
+                    }
+                }
                 SessionGuard.ConnectDecision.Revalidate -> {
-                    val ok = session != null && revalidate(session)
+                    val ok = session != null && revalidate(session) == true
                     if (ok) {
                         launchService(context)
                     } else {
@@ -216,8 +235,12 @@ class VpnViewModel(app: Application) : AndroidViewModel(app) {
         ContextCompat.startForegroundService(context, intent)
     }
 
-    /** Returns true when the session is still alive after talking to the backend. */
-    private suspend fun revalidate(session: SessionState): Boolean {
+    /**
+     * Returns true when the session is still alive after talking to the
+     * backend, false when the backend denied it, and null when the backend
+     * could not be reached at all (genuine network failure).
+     */
+    private suspend fun revalidate(session: SessionState): Boolean? {
         val deviceNow = System.currentTimeMillis()
         return try {
             val response = api.ping(
@@ -226,6 +249,7 @@ class VpnViewModel(app: Application) : AndroidViewModel(app) {
                     configVersion = session.configVersion,
                     connected = false,
                 ),
+                quick = true,
             )
             if (response.revoked) {
                 sessionRepo.clear()
@@ -258,6 +282,8 @@ class VpnViewModel(app: Application) : AndroidViewModel(app) {
                 sessionRepo.markSuspended(session.token)
             }
             false
+        } catch (e: ApiException.Network) {
+            null
         } catch (e: ApiException) {
             false
         }

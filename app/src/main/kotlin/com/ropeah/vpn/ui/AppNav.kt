@@ -84,8 +84,16 @@ fun AppNav() {
 
     val locked = session != null && SessionGuard.isLocked(session, nowMs)
 
+    // Expired accounts are kicked out to the login page, not parked on the
+    // lock screen: an expired session is dead, and re-login re-anchors it.
+    val expired = session != null && SessionGuard.isExpired(session, nowMs)
+
     LaunchedEffect(locked) {
         if (locked) sessionViewModel.stopVpn()
+    }
+
+    LaunchedEffect(expired) {
+        if (expired) sessionViewModel.sessionExpiredLocally()
     }
 
     NeoBackground {
@@ -94,6 +102,8 @@ fun AppNav() {
             // The login gate is part of managed mode; a local-only build keeps the
             // original server-management flow instead of a dead-end login screen.
             session == null && BuildConfig.MANAGED_MODE -> LoginScreen(viewModel = sessionViewModel)
+            // Clearing runs in the effect above; show login immediately.
+            expired -> LoginScreen(viewModel = sessionViewModel)
             locked -> {
                 val lockMessage by sessionViewModel.syncMessage.collectAsStateWithLifecycle()
                 ExpiredScreen(

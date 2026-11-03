@@ -37,6 +37,7 @@ import com.ropeah.vpn.ui.theme.NeoTeal
 import com.ropeah.vpn.ui.theme.NeoViolet
 import kotlin.math.PI
 import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -91,9 +92,35 @@ fun arcControl(start: Offset, end: Offset, bowPx: Float): Offset {
     )
 }
 
-/** Amber droplets trickling down inside the server card. */
+/**
+ * Amber droplets trickling down inside the server card — v2 (web mockup v2,
+ * user-approved 2026-11-04): droplets fall with gravity (accelerating and
+ * stretching as they speed up), sway slightly, splash into sparkles where
+ * they land, and pool into a glowing amber charge level that rises through
+ * the card over the 1300 ms trickle, under a soft pulsing card hum.
+ *
+ * NOTE (2026-11-03, still binding): the amber sweep band that used to
+ * travel down the card is REMOVED. On the user's Infinix it rendered as a
+ * solid pure-black rect: v3 (transparent gradient stops, sliding in from
+ * above the card) showed it in the strip above the card for ~100 ms; v4
+ * (near-transparent amber stops, clamped inside the card) pinned it at the
+ * card top for the full trickle, i.e. worse. Changing the gradient stops
+ * did not change the colour, so a gradient-filled rect is the trigger on
+ * this device. The v2 charge fill below is a SOLID low-alpha colour (no
+ * gradient Brush) and the hum is a stroke, both different draw paths —
+ * but if the black bar ever returns on-device, remove the charge fill
+ * first. Do not re-add a sweep band here without an on-device check.
+ */
 @Composable
 fun BoxScope.TrickleOverlay(modifier: Modifier = Modifier) {
+    val reduced = rememberReducedMotion()
+    // One-shot charge clock: the trickle phase lasts 1300 ms, so the
+    // charge level rises exactly once per trickle.
+    val chargeAnim = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        chargeAnim.animateTo(1f, animationSpec = tween(durationMillis = 1300, easing = LinearEasing))
+    }
+    val charge = chargeAnim.value.coerceIn(0f, 1f)
     val transition = rememberInfiniteTransition(label = "trickle")
     val progress by transition.animateFloat(
         initialValue = 0f,
@@ -104,35 +131,76 @@ fun BoxScope.TrickleOverlay(modifier: Modifier = Modifier) {
         ),
         label = "trickleProgress",
     )
+    // Soft card hum: a pulsing amber border while trickling.
+    val hum by transition.animateFloat(
+        initialValue = 0.15f,
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 550, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "trickleHum",
+    )
     Canvas(modifier = modifier.fillMaxSize()) {
-        val dropletCount = 10
+        // Charge pool: solid low-alpha amber rising from the card bottom.
+        if (charge > 0f) {
+            val fillH = size.height * charge
+            drawRect(
+                color = NeoAmber.copy(alpha = 0.12f),
+                topLeft = Offset(0f, size.height - fillH),
+                size = Size(size.width, fillH),
+            )
+            // Bright top edge of the rising charge.
+            drawLine(
+                color = NeoAmber.copy(alpha = 0.45f * charge),
+                start = Offset(0f, size.height - fillH),
+                end = Offset(size.width, size.height - fillH),
+                strokeWidth = 2.dp.toPx(),
+            )
+        }
+        // Card hum border.
+        drawRoundRect(
+            color = NeoAmber.copy(alpha = hum),
+            topLeft = Offset.Zero,
+            size = size,
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx(), 16.dp.toPx()),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx()),
+        )
+        val dropletCount = if (reduced) 6 else 12
         for (i in 0 until dropletCount) {
-            val offset = (progress + i.toFloat() / dropletCount) % 1f
-            val x = size.width * (0.08f + 0.84f * ((i * 37 % dropletCount).toFloat() / dropletCount))
-            val y = size.height * offset
-            val alpha = (sin(PI.toFloat() * offset)).coerceIn(0f, 1f)
+            val phase = i.toFloat() / dropletCount
+            val lp = (progress + phase) % 1f
+            // Gravity: accelerating fall, stretching as it speeds up.
+            val y = size.height * lp * lp
+            val sway = sin(lp * 2f * PI.toFloat() + phase * 2f * PI.toFloat()) * 4.dp.toPx()
+            val x = size.width * (0.08f + 0.84f * ((i * 37 % dropletCount).toFloat() / dropletCount)) + sway
+            val alpha = sin(PI.toFloat() * lp.coerceAtMost(1f)).coerceIn(0f, 1f)
             drawCircle(
                 color = NeoAmber.copy(alpha = alpha),
-                radius = 5.dp.toPx(),
+                radius = 4.dp.toPx() + 2.dp.toPx() * lp,
                 center = Offset(x, y),
             )
             drawLine(
                 color = NeoAmber.copy(alpha = alpha * 0.7f),
-                start = Offset(x, y - 14.dp.toPx()),
+                start = Offset(x, y - (8.dp.toPx() + 16.dp.toPx() * lp)),
                 end = Offset(x, y),
                 strokeWidth = 2.dp.toPx(),
             )
+            // Splash sparkles where the droplet lands.
+            if (lp > 0.88f) {
+                val splash = (1f - (lp - 0.88f) / 0.12f).coerceIn(0f, 1f)
+                for (k in 0 until 3) {
+                    drawCircle(
+                        color = NeoAmber.copy(alpha = splash * 0.8f),
+                        radius = 2.dp.toPx(),
+                        center = Offset(
+                            x + (k - 1) * 6.dp.toPx(),
+                            size.height - 4.dp.toPx() - splash * 6.dp.toPx(),
+                        ),
+                    )
+                }
+            }
         }
-        // NOTE (2026-11-03): the amber sweep band that used to travel down the
-        // card with the droplets is REMOVED. On the user's Infinix it rendered
-        // as a solid pure-black rect at the card top: v3 (Transparent gradient
-        // stops, sliding in from above the card) showed it in the strip above
-        // the card for ~100ms; v4 (near-transparent amber stops, clamped
-        // inside the card) moved it to the card top and pinned it there for
-        // the full ~500ms trickle, i.e. worse. Changing the gradient stops
-        // did not change the colour, so the rect itself is the trigger on
-        // this device, not its colours. Droplets alone carry the trickle.
-        // Do not re-add a sweep rect here without an on-device check.
     }
 }
 
@@ -176,14 +244,18 @@ private fun DrawScope.drawRocketBody(flame: Float, smoking: Boolean) {
         radius = w * 0.75f,
         center = Offset(cx, h * 0.45f),
     )
-    // Smoke puffs trail behind the rocket (above it when diving nose-down,
-    // i.e. opposite the nose) — drawn first so the body covers their roots.
+    // Sputter smoke trails behind the rocket (above it when diving
+    // nose-down, i.e. opposite the nose) — drawn first so the body covers
+    // their roots. Five puffs, alternating sides, for a dying-engine look.
     if (smoking) {
-        for (i in 0 until 3) {
+        for (i in 0 until 5) {
             drawCircle(
-                color = Color.Gray.copy(alpha = 0.30f - i * 0.08f),
+                color = Color.Gray.copy(alpha = 0.32f - i * 0.05f),
                 radius = (5f + i * 2.5f).dp.toPx(),
-                center = Offset(cx, h * 0.12f - i * 7.dp.toPx()),
+                center = Offset(
+                    cx + (if (i % 2 == 0) 3.dp.toPx() else -3.dp.toPx()),
+                    h * 0.12f - i * 7.dp.toPx(),
+                ),
             )
         }
     }
@@ -362,44 +434,101 @@ fun BoxScope.RocketOverlay(
     if (reduced) return
     val density = LocalDensity.current
     val spritePx = with(density) { 68.dp.toPx() }
+    // Looping clocks. Their values are only read in the flight phases, so
+    // they cost no recompositions while the overlay is idle.
+    val bobTransition = rememberInfiniteTransition(label = "rocketBob")
+    val bobValue by bobTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "rocketBobValue",
+    )
     val bob = if (phase == RocketPhase.Hovering) {
-        val transition = rememberInfiniteTransition(label = "rocketBob")
-        val bobValue by transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 900, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart,
-            ),
-            label = "rocketBobValue",
-        )
-        (sin(bobValue * 2f * PI.toFloat()) * with(density) { 6.dp.toPx() })
+        sin(bobValue * 2f * PI.toFloat()) * with(density) { 6.dp.toPx() }
     } else {
         0f
     }
-    // Fading flame trail along the flown arc.
+    // Hover sway: sideways drift on a slower cycle than the vertical bob.
+    val sway = if (phase == RocketPhase.Hovering) {
+        sin(bobValue * 2f * PI.toFloat() * 0.7f) * with(density) { 4.dp.toPx() }
+    } else {
+        0f
+    }
+    val flickerTransition = rememberInfiniteTransition(label = "rocketFlame")
+    val flickerValue by flickerTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 170, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "rocketFlameValue",
+    )
+    val flicker = if (phase == RocketPhase.Flying || phase == RocketPhase.Hovering ||
+        phase == RocketPhase.Landing
+    ) {
+        0.8f + 0.2f * sin(flickerValue * 2f * PI.toFloat())
+    } else {
+        1f
+    }
+    // Banking cap from the mockup: the nose follows the curve, but never
+    // banks past ±34°. The dive keeps its true nose-down angle.
+    val flightAngle = if (phase == RocketPhase.Diving) rocketAngle else rocketAngle.coerceIn(-34f, 34f)
+    // Fading flame trail along the flown arc + liftoff smoke puff.
     if ((phase == RocketPhase.Flying || phase == RocketPhase.Landing) && trail.size > 1) {
         Canvas(modifier = Modifier.fillMaxSize()) {
+            if (phase == RocketPhase.Flying) {
+                // Ignition puff at the launch point, fading as the flight progresses.
+                val puffAlpha = (1f - trail.size / 8f).coerceIn(0f, 1f) * 0.35f
+                val origin = trail.first()
+                for (i in 0 until 3) {
+                    drawCircle(
+                        color = Color.Gray.copy(alpha = puffAlpha * (1f - i * 0.25f)),
+                        radius = 6.dp.toPx() + trail.size * 2.dp.toPx() + i * 3.dp.toPx(),
+                        center = Offset(origin.x + (i - 1) * 8.dp.toPx(), origin.y),
+                    )
+                }
+            }
             trail.forEachIndexed { index, point ->
                 val alpha = (index + 1).toFloat() / trail.size * 0.55f
+                val drift = sin(index * 1.3f) * 3.dp.toPx()
                 drawCircle(
                     color = NeoAmber.copy(alpha = alpha),
                     radius = (2.dp.toPx() + 3.dp.toPx() * alpha),
-                    center = point,
+                    center = Offset(point.x + drift, point.y),
                 )
             }
         }
     }
     when (phase) {
         RocketPhase.Flying, RocketPhase.Hovering, RocketPhase.Landing -> {
+            // Landing anticipation: brief pull-back against the approach
+            // direction before the dart, like the mockup.
+            val pullAnim = remember { Animatable(0f) }
+            if (phase == RocketPhase.Landing) {
+                LaunchedEffect(Unit) {
+                    pullAnim.animateTo(1f, animationSpec = tween(durationMillis = 120, easing = LinearEasing))
+                }
+            }
+            val pull = if (phase == RocketPhase.Landing) {
+                (1f - pullAnim.value.coerceIn(0f, 1f)) * with(density) { 10.dp.toPx() }
+            } else {
+                0f
+            }
+            // Nose direction from the flight angle (nose-up sprite rotated).
+            val noseRad = Math.toRadians(flightAngle.toDouble())
+            val nose = Offset(sin(noseRad).toFloat(), -cos(noseRad).toFloat())
             RocketSprite(
-                rotationDeg = rocketAngle,
-                flame = if (phase == RocketPhase.Hovering) 0.7f else 1f,
+                rotationDeg = flightAngle,
+                flame = if (phase == RocketPhase.Hovering) 0.7f * flicker else 1f * flicker,
                 smoking = false,
                 modifier = modifier.offset {
                     IntOffset(
-                        (rocketPos.x - spritePx / 2f).roundToInt(),
-                        (rocketPos.y - spritePx / 2f + bob).roundToInt(),
+                        (rocketPos.x - spritePx / 2f + sway + (-nose.x * pull)).roundToInt(),
+                        (rocketPos.y - spritePx / 2f + bob + (-nose.y * pull)).roundToInt(),
                     )
                 },
             )
@@ -416,8 +545,8 @@ fun BoxScope.RocketOverlay(
         }
         RocketPhase.Diving -> {
             RocketSprite(
-                rotationDeg = rocketAngle,
-                flame = 0.25f,
+                rotationDeg = rocketAngle, // true nose-down angle, unclamped
+                flame = 0f, // nozzle dead: sputter smoke only, like the mockup
                 smoking = true,
                 modifier = modifier.offset {
                     IntOffset(

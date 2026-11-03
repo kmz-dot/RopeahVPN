@@ -1,5 +1,6 @@
 package com.ropeah.vpn.data
 
+import android.util.Log
 import com.ropeah.vpn.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -10,6 +11,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.util.concurrent.TimeUnit
 
 /** Typed failures so callers can distinguish auth/expiry/transport problems. */
@@ -64,14 +67,21 @@ class ApiClient(
         return decode("config") { json.decodeFromString(ConfigResponse.serializer(), text) }
     }
 
-    suspend fun ping(token: String, body: PingRequest): PingResponse {
+    /**
+     * @param quick use short timeouts (connect 3 s, whole call 5 s) for
+     * checks that gate the UI: connect-time revalidation, heartbeat and
+     * launch revalidation. A normal call may hang up to 20 s on a dead
+     * direct path, which stalls the connect animation.
+     */
+    suspend fun ping(token: String, body: PingRequest, quick: Boolean = false): PingResponse {
         val payload = json.encodeToString(PingRequest.serializer(), body)
         val text = execute(
             Request.Builder()
                 .url("$base/api/session/ping")
                 .header("Authorization", "Bearer $token")
                 .post(payload.toRequestBody(jsonMedia))
-                .build()
+                .build(),
+            quick = quick,
         )
         return decode("ping") { json.decodeFromString(PingResponse.serializer(), text) }
     }
@@ -86,9 +96,32 @@ class ApiClient(
         )
     }
 
-    private suspend fun execute(request: Request): String = withContext(Dispatchers.IO) {
+    /**
+     * Direct call first. On a transport failure, retry once through Xray's
+     * local SOCKS port, which forwards through the tunnel: this is what lets
+     * the app reach the backend when the phone has no direct data but the
+     * tunnel is up. When the tunnel is down the SOCKS connect is refused
+     * instantly, so the retry costs nothing there. Only a transport failure
+     * retries; an HTTP answer (even 401/403) is the backend speaking and is
+     * returned as-is. If both paths fail, the original direct error is kept.
+     */
+    private suspend fun execute(request: Request, quick: Boolean = false): String =
+        withContext(Dispatchers.IO) {
+            try {
+                runCall(if (quick) shortClient else client, request)
+            } catch (e: ApiException.Network) {
+                Log.d(TAG, "backend unreachable directly; retrying via tunnel SOCKS")
+                try {
+                    runCall(if (quick) shortSocksClient else socksClient, request)
+                } catch (e2: ApiException.Network) {
+                    throw e
+                }
+            }
+        }
+
+    private fun runCall(callClient: OkHttpClient, request: Request): String {
         try {
-            client.newCall(request).execute().use { response ->
+            callClient.newCall(request).execute().use { response ->
                 val text = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
                     val error = parseError(text)
@@ -106,7 +139,7 @@ class ApiClient(
                         )
                     }
                 }
-                text
+                return text
             }
         } catch (e: CancellationException) {
             throw e
@@ -129,14 +162,41 @@ class ApiClient(
         runCatching { json.decodeFromString(ApiErrorBody.serializer(), text) }.getOrNull()
 
     companion object {
+        private const val TAG = "ApiClient"
+
+        /** Must match RopeahVpnService.LOCAL_SOCKS_PORT (Xray's SOCKS inbound). */
+        private const val TUNNEL_SOCKS_PORT = 10808
+        private const val TUNNEL_SOCKS_HOST = "127.0.0.1"
+
         /** Shared across ApiClient instances: one connection pool, one dispatcher. */
-        private val sharedClient: OkHttpClient by lazy {
-            OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
-                .writeTimeout(10, TimeUnit.SECONDS)
-                .callTimeout(20, TimeUnit.SECONDS)
-                .build()
+        private val sharedClient: OkHttpClient by lazy { buildClient(proxy = null, quick = false) }
+
+        /** Short timeouts for UI-gating checks (connect, heartbeat, launch). */
+        private val shortClient: OkHttpClient by lazy { buildClient(proxy = null, quick = true) }
+
+        /** Same timeouts as [sharedClient], but routed via the tunnel's SOCKS port. */
+        private val socksClient: OkHttpClient by lazy {
+            buildClient(
+                proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(TUNNEL_SOCKS_HOST, TUNNEL_SOCKS_PORT)),
+                quick = false,
+            )
+        }
+
+        private val shortSocksClient: OkHttpClient by lazy {
+            buildClient(
+                proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(TUNNEL_SOCKS_HOST, TUNNEL_SOCKS_PORT)),
+                quick = true,
+            )
+        }
+
+        private fun buildClient(proxy: Proxy?, quick: Boolean): OkHttpClient {
+            val builder = OkHttpClient.Builder()
+                .connectTimeout(if (quick) 3 else 10, TimeUnit.SECONDS)
+                .readTimeout(if (quick) 3 else 10, TimeUnit.SECONDS)
+                .writeTimeout(if (quick) 3 else 10, TimeUnit.SECONDS)
+                .callTimeout(if (quick) 5 else 20, TimeUnit.SECONDS)
+            if (proxy != null) builder.proxy(proxy)
+            return builder.build()
         }
     }
 }

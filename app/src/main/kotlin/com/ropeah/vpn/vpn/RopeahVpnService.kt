@@ -172,7 +172,14 @@ class RopeahVpnService : VpnService() {
                 lastExpiryCheckAt = now
                 val session = sessionRepo.readOnce()
                 if (SessionGuard.isLocked(session, now)) {
-                    Log.w(TAG, "session expired or suspended mid-session; dropping tunnel")
+                    // An expired session is dead: drop the stored session too
+                    // so the UI lands on the login page, not the lock screen.
+                    if (SessionGuard.isExpired(session, now)) {
+                        Log.w(TAG, "session expired mid-session; dropping tunnel and clearing session")
+                        sessionRepo.clear()
+                    } else {
+                        Log.w(TAG, "session suspended mid-session; dropping tunnel")
+                    }
                     stopVpn()
                     return@launch
                 }
@@ -198,6 +205,7 @@ class RopeahVpnService : VpnService() {
                             downDelta = totalDown - reportedDown,
                             latencyMs = lastLatency.takeIf { it >= 0L },
                         ),
+                        quick = true,
                     )
                     reportedUp = totalUp
                     reportedDown = totalDown
