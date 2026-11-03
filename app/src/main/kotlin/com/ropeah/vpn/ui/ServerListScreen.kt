@@ -40,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
@@ -82,6 +83,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -110,6 +112,7 @@ import com.ropeah.vpn.ui.neo.LatencyMeter
 import com.ropeah.vpn.ui.neo.MicroLabel
 import com.ropeah.vpn.ui.neo.NeoBadge
 import com.ropeah.vpn.ui.neo.NeoIconPill
+import com.ropeah.vpn.ui.neo.NeonGradient
 import com.ropeah.vpn.ui.neo.NeoPrimaryButton
 import com.ropeah.vpn.ui.neo.neonBorderGradient
 import com.ropeah.vpn.ui.theme.NeoCyan
@@ -424,14 +427,13 @@ private fun ServerCard(
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
+    // Mockup card layout: flag lives in the avatar; the meta line carries
+    // country + address only (protocol gets its own chip below).
     val meta = buildString {
         if (location != null) {
-            location.flag?.takeIf { it.isNotBlank() }?.let { append(it).append(' ') }
             append(location.countryName)
             append("  ·  ")
         }
-        append(protocolLabel(server.protocol))
-        append("  ·  ")
         append(server.address)
         append(':')
         append(server.port)
@@ -443,7 +445,13 @@ private fun ServerCard(
         onLongClick = onLongPress,
         contentPadding = PaddingValues(horizontal = 15.dp, vertical = 14.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // Mockup unified card: everything inside the box, nothing spills out.
+        // Middle column flexes (weight) so long names truncate; the right
+        // column is fixed: ping readout + selection check, like the mockup.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             ProtocolAvatar(
                 protocol = server.protocol,
                 flag = location?.flag,
@@ -469,46 +477,50 @@ private fun ServerCard(
                         )
                     }
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = meta,
-                    style = HudTinyStyle,
-                    color = NeoTextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(5.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (latencyMs != null) {
-                        LatencyMeter(latencyMs = latencyMs)
-                    } else if (isPinging) {
-                        Text(
-                            text = "SCANNING…",
-                            style = HudTinyStyle,
-                            color = NeoTextSecondary.copy(alpha = 0.65f),
-                        )
-                    } else {
-                        Text(
-                            text = "--",
-                            style = HudTinyStyle,
-                            color = NeoTextSecondary.copy(alpha = 0.65f),
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (isActive) {
-                        ActiveDot(
-                            isConnected = isConnected,
-                            isConnecting = isConnecting,
-                        )
-                    }
+                    NeoBadge(
+                        text = protocolLabel(server.protocol),
+                        accent = NeoCyan,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = meta,
+                        style = HudTinyStyle,
+                        color = NeoTextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
                 }
             }
-            Spacer(Modifier.width(8.dp))
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = if (isActive) NeoTeal else NeoTextSecondary.copy(alpha = 0.8f),
-            )
+            Spacer(Modifier.width(10.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                if (latencyMs != null) {
+                    LatencyMeter(latencyMs = latencyMs)
+                } else if (isPinging) {
+                    Text(
+                        text = "SCANNING…",
+                        style = HudTinyStyle,
+                        color = NeoTextSecondary.copy(alpha = 0.65f),
+                    )
+                } else {
+                    Text(
+                        text = "--",
+                        style = HudTinyStyle,
+                        color = NeoTextSecondary.copy(alpha = 0.65f),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                SelectionRing(selected = isActive)
+                if (isActive && (isConnected || isConnecting)) {
+                    Spacer(Modifier.height(6.dp))
+                    ActiveDot(
+                        isConnected = isConnected,
+                        isConnecting = isConnecting,
+                    )
+                }
+            }
         }
     }
 }
@@ -538,6 +550,35 @@ private fun ProtocolAvatar(protocol: Protocol, flag: String?, active: Boolean) {
                 text = protocolInitial(protocol),
                 style = MaterialTheme.typography.titleMedium,
                 color = if (active) NeoTeal else NeoTextSecondary,
+            )
+        }
+    }
+}
+
+/** Mockup selection indicator: gradient check ring when selected, hollow ring otherwise. */
+@Composable
+private fun SelectionRing(selected: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(26.dp)
+            .clip(CircleShape)
+            .background(
+                if (selected) NeonGradient else SolidColor(Color.Transparent),
+                CircleShape,
+            )
+            .border(
+                1.5.dp,
+                if (selected) NeoTeal.copy(alpha = 0.6f) else NeoTextSecondary.copy(alpha = 0.45f),
+                CircleShape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = null,
+                tint = Color(0xFF04121A),
+                modifier = Modifier.size(15.dp),
             )
         }
     }

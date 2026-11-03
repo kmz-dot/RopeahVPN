@@ -50,6 +50,8 @@
 
     <string name="action_connect">Connect</string>
     <string name="action_disconnect">Disconnect</string>
+    <string name="action_retry">Retry</string>
+    <string name="rocket_connect_failed">Connection failed — the server did not reply. Tap Retry or pick another server.</string>
     <string name="action_share_log">Share log</string>
 
     <string name="home_select_server_title">Select a server</string>
